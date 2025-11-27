@@ -26,7 +26,6 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // Initial render
   render({
     remainingMs: state.remainingMs || 0,
     isOvertime: state.isOvertime || false,

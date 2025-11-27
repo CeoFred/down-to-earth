@@ -62,7 +62,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     renderState({ remainingMs, isOvertime, overtimeMs, isRunning })
   );
 
-  // Presets
   presetButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
       const mins = Number(btn.dataset.minutes || "0");
@@ -77,7 +76,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     const totalSeconds = mins * 60 + secs;
 
     if (totalSeconds <= 0) {
-      // simple guard – you can make this fancier (toast, red border, etc)
       secondsInput.focus();
       return;
     }

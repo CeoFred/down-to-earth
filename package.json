@@ -1,9 +1,9 @@
 {
-  "name": "countdown-projector",
+  "name": "down-to-earth",
   "version": "1.0.0",
   "main": "main.js",
   "build": {
-    "appId": "com.yourname.countdownprojector",
+    "appId": "com.codemon.downtoearth",
     "productName": "Down to Earth",
     "files": [
       "main.js",
