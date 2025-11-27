@@ -16,13 +16,13 @@
     ],
     "mac": {
       "target": [
-        "dmg"
+        "zip"
       ],
       "category": "public.app-category.productivity"
     },
     "win": {
       "target": [
-        "nsis"
+        "portable"
       ]
     },
     "extraResources": []
