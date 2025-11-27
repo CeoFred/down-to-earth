@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Countdown Controller</title>
+    <style>
+      :root {
+        --bg: #050816;
+        --card-bg: #0b1020;
+        --accent: #3b82f6;
+        --accent-soft: rgba(59, 130, 246, 0.15);
+        --text: #f9fafb;
+        --muted: #9ca3af;
+        --danger: #ef4444;
+        --radius-lg: 18px;
+        --shadow-soft: 0 18px 40px rgba(0, 0, 0, 0.55);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(circle at top, #111827 0, #020617 55%);
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        color: var(--text);
+      }
+
+      .shell {
+        width: 100%;
+        max-width: 640px;
+        padding: 24px;
+      }
+
+      .card {
+        background: linear-gradient(145deg, #020617, #020617, #020617);
+        border-radius: var(--radius-lg);
+        padding: 20px 22px;
+        box-shadow: var(--shadow-soft);
+        border: 1px solid rgba(148, 163, 184, 0.14);
+        backdrop-filter: blur(12px);
+      }
+
+      .card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .card-title {
+        font-size: 20px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+
+      .card-subtitle {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .status-pill {
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(15, 118, 110, 0.09);
+        color: #6ee7b7;
+      }
+
+      .status-pill[data-state="paused"] {
+        background: rgba(148, 163, 184, 0.14);
+        color: var(--muted);
+      }
+
+      .status-pill[data-state="running"]::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #22c55e;
+        box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.25);
+      }
+
+      .status-pill[data-state="paused"]::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #9ca3af;
+      }
+
+      .timer-display {
+        margin: 8px 0 18px;
+        padding: 14px 16px;
+        border-radius: 16px;
+        background: radial-gradient(
+          circle at top,
+          rgba(59, 130, 246, 0.22),
+          rgba(15, 23, 42, 0.95)
+        );
+        border: 1px solid rgba(37, 99, 235, 0.25);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .timer-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        color: rgba(209, 213, 219, 0.8);
+      }
+
+      .timer-value {
+        font-size: 56px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+      }
+
+      .overtime {
+        color: var(--danger);
+      }
+
+      .inputs-row {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+      }
+
+      .field {
+        flex: 1;
+        min-width: 120px;
+      }
+
+      .field-label {
+        display: block;
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+
+      .field-input {
+        width: 100%;
+        padding: 7px 10px;
+        border-radius: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        background-color: rgba(15, 23, 42, 0.8);
+        color: var(--text);
+        font-size: 13px;
+        outline: none;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease,
+          background-color 0.15s ease;
+      }
+
+      .field-input:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.6);
+        background-color: rgba(15, 23, 42, 1);
+      }
+
+      .presets-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+
+      .preset-btn {
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.55);
+        background: rgba(15, 23, 42, 0.9);
+        color: var(--muted);
+        padding: 4px 10px;
+        font-size: 11px;
+        cursor: pointer;
+        transition: background 0.12s ease, border-color 0.12s ease,
+          color 0.12s ease, transform 0.06s ease;
+      }
+
+      .preset-btn:hover {
+        background: rgba(30, 64, 175, 0.9);
+        border-color: rgba(59, 130, 246, 0.8);
+        color: #e5e7eb;
+        transform: translateY(-0.5px);
+      }
+
+      .preset-btn:active {
+        transform: translateY(0.5px) scale(0.99);
+      }
+
+      .controls-row {
+        display: flex;
+        gap: 10px;
+        margin-top: 6px;
+        flex-wrap: wrap;
+      }
+
+      .btn {
+        flex: 1;
+        min-width: 90px;
+        border-radius: 999px;
+        border: none;
+        padding: 9px 12px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        transition: background 0.15s ease, transform 0.05s ease,
+          box-shadow 0.12s ease, opacity 0.12s ease;
+      }
+
+      .btn-primary {
+        background: linear-gradient(135deg, #2563eb, #3b82f6);
+        color: white;
+        box-shadow: 0 8px 18px rgba(37, 99, 235, 0.45);
+      }
+
+      .btn-primary:hover {
+        background: linear-gradient(135deg, #1d4ed8, #2563eb);
+        transform: translateY(-0.5px);
+      }
+
+      .btn-secondary {
+        background: rgba(15, 23, 42, 0.9);
+        color: var(--text);
+        border: 1px solid rgba(148, 163, 184, 0.5);
+      }
+
+      .btn-secondary:hover {
+        background: rgba(30, 64, 175, 0.22);
+      }
+
+      .btn-ghost {
+        background: transparent;
+        color: var(--muted);
+        border: 1px dashed rgba(148, 163, 184, 0.6);
+      }
+
+      .btn-ghost:hover {
+        background: rgba(15, 23, 42, 0.95);
+        color: #e5e7eb;
+      }
+
+      .btn:active {
+        transform: translateY(0.5px) scale(0.99);
+        box-shadow: none;
+      }
+
+      .btn:disabled {
+        opacity: 0.55;
+        cursor: default;
+        box-shadow: none;
+        transform: none;
+      }
+
+      .footer {
+        margin-top: 10px;
+        font-size: 11px;
+        color: rgba(148, 163, 184, 0.9);
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .footer span {
+        white-space: nowrap;
+      }
+
+      .dot {
+        display: inline-block;
+        width: 4px;
+        height: 4px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.9);
+        margin: 0 4px;
+      }
+
+      @media (max-width: 480px) {
+        .timer-value {
+          font-size: 42px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Countdown Controller</div>
+            <div class="card-subtitle">
+              Drive the projector timer from here.
+            </div>
+          </div>
+          <div id="statusPill" class="status-pill" data-state="paused">
+            Paused
+          </div>
+        </div>
+
+        <div class="timer-display">
+          <div class="timer-label" id="timerLabel">Time Remaining</div>
+          <div class="timer-value" id="display">00:00</div>
+        </div>
+
+        <div class="inputs-row">
+          <div class="field">
+            <label class="field-label" for="minutes">Minutes</label>
+            <input
+              id="minutes"
+              type="number"
+              min="0"
+              value="5"
+              class="field-input"
+            />
+          </div>
+          <div class="field">
+            <label class="field-label" for="seconds">Seconds</label>
+            <input
+              id="seconds"
+              type="number"
+              min="0"
+              max="59"
+              value="0"
+              class="field-input"
+            />
+          </div>
+        </div>
+
+        <div class="presets-row">
+          <button class="preset-btn" data-minutes="5">5 min</button>
+          <button class="preset-btn" data-minutes="10">10 min</button>
+          <button class="preset-btn" data-minutes="15">15 min</button>
+          <button class="preset-btn" data-minutes="30">30 min</button>
+          <button class="preset-btn" data-minutes="45">45 min</button>
+        </div>
+
+        <div class="controls-row">
+          <button id="startBtn" class="btn btn-primary">
+            Start
+          </button>
+          <button id="pauseBtn" class="btn btn-secondary" disabled>
+            Pause
+          </button>
+          <button id="resetBtn" class="btn btn-ghost">Reset</button>
+        </div>
+
+        <div class="footer">
+          <span>
+            <strong>Tip:</strong> Use the presets for faster setup.
+          </span>
+          <span>
+            <span class="dot"></span>
+            Projector mirrors this timer live.
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>

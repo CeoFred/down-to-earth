@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Countdown Projector</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: #000;
+        color: #fff;
+        height: 100%;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      #label {
+        font-size: 12vw;
+        font-weight: 800;
+        margin-bottom: 1vh;
+      }
+      #time {
+        font-size: 20vw;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="label"></div>
+    <div id="time">00:00</div>
+    <script src="projector.js"></script>
+  </body>
+</html>
