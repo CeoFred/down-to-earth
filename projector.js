@@ -2,7 +2,12 @@ function formatTime(ms) {
   const totalSeconds = Math.floor(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(
+    2,
+    "0"
+  )}`;
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -11,20 +16,19 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   const state = await window.timerAPI.getState();
 
-  function render({ remainingMs, isOvertime, overtimeMs }) {
-    if (isOvertime) {
-
-      label.textContent = 'TIME UP!!';
-      timeDisplay.textContent = `-${formatTime(overtimeMs)}`;
-      timeDisplay.style.fontSize = '20vh';
-      document.body.style.background = '#800'; // reddish
-    } else {
-
-      label.textContent = '';
-      timeDisplay.textContent = formatTime(remainingMs);
-      document.body.style.background = '#000';
-    }
+function render({ remainingMs, isOvertime, overtimeMs }) {
+  if (isOvertime) {
+    label.textContent = 'TIME UP!!';
+    timeDisplay.textContent = `-${formatTime(overtimeMs)}`;
+    timeDisplay.classList.add('overtime');
+    document.body.style.background = '#800'; // reddish
+  } else {
+    label.textContent = '';
+    timeDisplay.textContent = formatTime(remainingMs);
+    timeDisplay.classList.remove('overtime');
+    document.body.style.background = '#000';
   }
+}
 
   render({
     remainingMs: state.remainingMs || 0,
@@ -39,4 +43,12 @@ window.addEventListener('DOMContentLoaded', async () => {
   window.timerAPI.onFinished(() => {
     
   });
+
+  window.timerAPI.onTitle(({ title }) => {
+  titleEl.textContent = title || "";
 });
+});
+
+const titleEl = document.getElementById("title");
+titleEl.textContent = state.customTitle || "";
+

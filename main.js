@@ -9,12 +9,15 @@ let remainingMs = 0;
 let isRunning = false;
 let isOvertime = false;
 let overtimeMs = 0; 
-
+let isPaused = false;
+let customTitle = "";
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-   width: 500,
-    height: 400,
+    fullscreen: true,
+    frame: true,
+    autoHideMenuBar: true,
+    backgroundColor: '#000000',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -23,6 +26,15 @@ function createMainWindow() {
   });
 
   mainWindow.loadFile('renderer.html');
+
+    mainWindow.on('closed', () => {
+    mainWindow = null;
+
+    if (projectorWindow) {
+      projectorWindow.close();
+      projectorWindow = null;
+    }
+  });
 }
 
 function createProjectorWindow() {
@@ -71,7 +83,6 @@ app.on('window-all-closed', () => {
 });
 
 /* ---------------- TIMER LOGIC ---------------- */
-
 function broadcast(channel, data) {
   BrowserWindow.getAllWindows().forEach((win) => {
     win.webContents.send(channel, data);
@@ -94,11 +105,12 @@ function startTimer(ms) {
   }
 
   isRunning = true;
-  broadcast('timer:update', { remainingMs, isRunning, isOvertime, overtimeMs });
+  isPaused = false;
+
+  broadcast('timer:update', { remainingMs, isRunning, isOvertime, overtimeMs, isPaused });
 
   timerInterval = setInterval(() => {
     if (!isOvertime) {
-      // normal countdown phase
       remainingMs -= 1000;
 
       if (remainingMs <= 0) {
@@ -111,25 +123,52 @@ function startTimer(ms) {
       overtimeMs += 1000;
     }
 
-    broadcast('timer:update', { remainingMs, isRunning, isOvertime, overtimeMs });
+    broadcast('timer:update', { remainingMs, isRunning, isOvertime, overtimeMs, isPaused });
   }, 1000);
 }
 
 function pauseTimer() {
   isRunning = false;
+  isPaused = true;
   clearInterval(timerInterval);
-  broadcast('timer:update', { remainingMs, isRunning, isOvertime, overtimeMs });
+  broadcast('timer:update', { remainingMs, isRunning, isOvertime, overtimeMs, isPaused });
+}
+
+function resumeTimer() {
+  if (isRunning) return; // already running
+
+  isRunning = true;
+  isPaused = false;
+
+  broadcast('timer:update', { remainingMs, isRunning, isOvertime, overtimeMs, isPaused });
+
+  timerInterval = setInterval(() => {
+    if (!isOvertime) {
+      remainingMs -= 1000;
+
+      if (remainingMs <= 0) {
+        remainingMs = 0;
+        isOvertime = true;
+        overtimeMs = 0;
+        broadcast('timer:finished', {});
+      }
+    } else {
+      overtimeMs += 1000;
+    }
+
+    broadcast('timer:update', { remainingMs, isRunning, isOvertime, overtimeMs, isPaused });
+  }, 1000);
 }
 
 function resetTimer() {
   isRunning = false;
+  isPaused = false;
   remainingMs = 0;
   isOvertime = false;
   overtimeMs = 0;
   clearInterval(timerInterval);
-  broadcast('timer:update', { remainingMs, isRunning, isOvertime, overtimeMs });
+  broadcast('timer:update', { remainingMs, isRunning, isOvertime, overtimeMs, isPaused });
 }
-
 
 ipcMain.handle('timer:start', (event, ms) => {
   startTimer(ms);
@@ -139,10 +178,19 @@ ipcMain.handle('timer:pause', () => {
   pauseTimer();
 });
 
+ipcMain.handle('timer:resume', () => {
+  resumeTimer();
+});
+
 ipcMain.handle('timer:reset', () => {
   resetTimer();
 });
 
-ipcMain.handle('timer:getState', () => {
-  return { remainingMs, isRunning, isOvertime, overtimeMs };
+ipcMain.handle("timer:getState", () => {
+  return { remainingMs, isRunning, isOvertime, overtimeMs, isPaused, customTitle };
+});
+
+ipcMain.handle("timer:setTitle", (event, title) => {
+  customTitle = title || "";
+  broadcast("timer:title", { title: customTitle });
 });

@@ -22,13 +22,33 @@
         font-weight: 800;
         margin-bottom: 1vh;
       }
-      #time {
-        font-size: 20vw;
-        font-weight: bold;
-      }
+   #time {
+  font-size: 20vw;
+  font-weight: bold;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  display: inline-block;
+  min-width: 11ch;
+  text-align: center;
+}
+
+#time.overtime {
+  font-size: 18vw;         
+  color: #fecaca;         
+}
     </style>
   </head>
   <body>
+    <div id="title" style="
+  font-size: 10vh;
+  margin-bottom: 2vh;
+  color: #fff;
+  text-align: center;
+  font-weight: 600;
+  font-family: system-ui, sans-serif;">
+</div>
     <div id="label"></div>
     <div id="time">00:00</div>
     <script src="projector.js"></script>

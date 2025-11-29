@@ -1,7 +1,16 @@
+  let currentState = {
+    remainingMs: 0,
+    isOvertime: false,
+    overtimeMs: 0,
+    isRunning: false,
+    isPaused: false,
+  };
+
 function formatTime(ms) {
   const totalSeconds = Math.floor(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
+
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(
     2,
     "0"
@@ -21,45 +30,57 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   const presetButtons = document.querySelectorAll(".preset-btn");
 
-  function setStatus(isRunning) {
+   function setStatus(isRunning, isPaused) {
     if (isRunning) {
       statusPill.dataset.state = "running";
       statusPill.textContent = "Running";
       startBtn.disabled = true;
       pauseBtn.disabled = false;
-    } else {
+      pauseBtn.textContent = "Pause";
+    } else if (isPaused) {
       statusPill.dataset.state = "paused";
       statusPill.textContent = "Paused";
       startBtn.disabled = false;
-      pauseBtn.disabled = true;
-    }
-  }
-
-  function renderState({ remainingMs, isOvertime, overtimeMs, isRunning }) {
-    if (isOvertime) {
-      timerLabel.textContent = "Time Up";
-      display.textContent = `-${formatTime(overtimeMs)}`;
-      display.classList.add("overtime");
+      pauseBtn.disabled = false;
+      pauseBtn.textContent = "Resume";
     } else {
-      timerLabel.textContent = "Time Remaining";
-      display.textContent = formatTime(remainingMs);
-      display.classList.remove("overtime");
+      // idle / reset
+      statusPill.dataset.state = "paused";
+      statusPill.textContent = "Idle";
+      startBtn.disabled = false;
+      pauseBtn.disabled = true;
+      pauseBtn.textContent = "Pause";
     }
-
-    setStatus(isRunning);
   }
 
-  // Initial sync from main
+  function renderState({ remainingMs, isOvertime, overtimeMs, isRunning, isPaused }) {
+    currentState = { remainingMs, isOvertime, overtimeMs, isRunning, isPaused };
+
+ if (isOvertime) {
+  timerLabel.textContent = "Time Up!";
+  display.textContent = `-${formatTime(overtimeMs)}`;
+  display.classList.add("overtime");
+} else {
+  timerLabel.textContent = "Time Remaining";
+  display.textContent = formatTime(remainingMs);
+  display.classList.remove("overtime");
+}
+
+    setStatus(isRunning, isPaused);
+  }
+
   const state = await window.timerAPI.getState();
   renderState({
     remainingMs: state.remainingMs || 0,
     isOvertime: state.isOvertime || false,
     overtimeMs: state.overtimeMs || 0,
     isRunning: state.isRunning || false,
+    isPaused: state.isPaused || false,
   });
 
-  window.timerAPI.onUpdate(({ remainingMs, isOvertime, overtimeMs, isRunning }) =>
-    renderState({ remainingMs, isOvertime, overtimeMs, isRunning })
+  window.timerAPI.onUpdate(
+    ({ remainingMs, isOvertime, overtimeMs, isRunning, isPaused }) =>
+      renderState({ remainingMs, isOvertime, overtimeMs, isRunning, isPaused })
   );
 
   presetButtons.forEach((btn) => {
@@ -83,12 +104,30 @@ window.addEventListener("DOMContentLoaded", async () => {
     const ms = totalSeconds * 1000;
     window.timerAPI.start(ms);
   });
-
   pauseBtn.addEventListener("click", () => {
-    window.timerAPI.pause();
+    if (currentState.isRunning) {
+      window.timerAPI.pause();
+    } else if (currentState.isPaused) {
+      window.timerAPI.resume();
+    }
   });
 
   resetBtn.addEventListener("click", () => {
     window.timerAPI.reset();
   });
+});
+
+const customTitleInput = document.getElementById("customTitle");
+
+
+customTitleInput.addEventListener("input", () => {
+  const title = customTitleInput.value.trim();
+  window.timerAPI.setTitle(title);
+});
+
+
+customTitleInput.addEventListener("keypress", (e) => {
+  if (e.key === "Enter") {
+    window.timerAPI.setTitle(customTitleInput.value.trim());
+  }
 });

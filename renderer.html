@@ -123,11 +123,22 @@
         color: rgba(209, 213, 219, 0.8);
       }
 
-      .timer-value {
-        font-size: 56px;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-      }
+    .timer-value {
+  font-size: 56px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+
+  /* NEW: make numerical width stable */
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+
+  /* NEW: fix width so layout doesn’t jump */
+  display: inline-block;
+  min-width: 11ch; /* enough for -00:00.00 */
+  text-align: center;
+}
 
       .overtime {
         color: var(--danger);
@@ -342,12 +353,25 @@
           </div>
         </div>
 
+        <div class="field" style="margin-bottom: 14px;">
+  <label class="field-label" for="customTitle">Title (optional)</label>
+  <input
+    id="customTitle"
+    type="text"
+    placeholder="e.g. Sermon Timer, Prayer Session, Youth Meeting"
+    class="field-input"
+  />
+</div>
+
         <div class="presets-row">
           <button class="preset-btn" data-minutes="5">5 min</button>
           <button class="preset-btn" data-minutes="10">10 min</button>
           <button class="preset-btn" data-minutes="15">15 min</button>
           <button class="preset-btn" data-minutes="30">30 min</button>
           <button class="preset-btn" data-minutes="45">45 min</button>
+          <button class="preset-btn" data-minutes="50">50 min</button>
+          <button class="preset-btn" data-minutes="60">60 min</button>
+
         </div>
 
         <div class="controls-row">
