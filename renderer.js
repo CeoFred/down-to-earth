@@ -42,6 +42,57 @@ if (typeof window.timerAPI === 'undefined') {
   };
 }
 
+/* ---------------- AUDIO LOGIC ---------------- */
+let isMuted = false;
+let activeAlarmContext = null;
+
+function stopAlarm() {
+  if (activeAlarmContext) {
+    try {
+      activeAlarmContext.close();
+    } catch (e) {}
+    activeAlarmContext = null;
+  }
+}
+
+function playAlarm() {
+  if (isMuted) return;
+  stopAlarm(); // Stop any existing alarm
+
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContext) return;
+  
+  activeAlarmContext = new AudioContext();
+  const now = activeAlarmContext.currentTime;
+  
+  // Make it last 7 seconds
+  const totalDuration = 7; 
+  const pulseInterval = 0.5; // seconds per pulse
+
+  for (let i = 0; i < totalDuration; i += pulseInterval) {
+    const startTime = now + i;
+    const duration = pulseInterval * 0.8; // 80% duty cycle for the beep
+
+    const osc = activeAlarmContext.createOscillator();
+    const gain = activeAlarmContext.createGain();
+
+    // Piercing square wave for high visibility, or high-freq sine
+    osc.type = 'sine'; 
+    osc.frequency.setValueAtTime(880, startTime); // A5
+    osc.frequency.exponentialRampToValueAtTime(440, startTime + duration); // Slide down for siren effect
+    
+    gain.gain.setValueAtTime(0, startTime);
+    gain.gain.linearRampToValueAtTime(1.0, startTime + 0.02); // MAX VOLUME
+    gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+
+    osc.connect(gain);
+    gain.connect(activeAlarmContext.destination);
+
+    osc.start(startTime);
+    osc.stop(startTime + duration);
+  }
+}
+
 /* ---------------- CORE TIMER LOGIC ---------------- */
 let currentState = {
   remainingMs: 0,
@@ -102,6 +153,7 @@ window.renderState = function({ remainingMs, isOvertime, overtimeMs, isRunning, 
       pauseBtn.disabled = false;
       pauseBtn.textContent = "Resume";
     }
+    stopAlarm(); // Stop when paused
   } else {
     statusPill.dataset.state = "paused";
     statusPill.textContent = "Idle";
@@ -110,6 +162,7 @@ window.renderState = function({ remainingMs, isOvertime, overtimeMs, isRunning, 
       pauseBtn.disabled = true;
       pauseBtn.textContent = "Pause";
     }
+    stopAlarm(); // Stop when idle
   }
 };
 
@@ -142,6 +195,11 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (customTitleInput && document.activeElement !== customTitleInput) {
        customTitleInput.value = title;
     }
+  });
+
+  // Listen for timer finish to play alarm
+  window.timerAPI.onFinished(() => {
+    playAlarm();
   });
 
   // Handle Server Info (only works in Electron)
@@ -180,6 +238,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   pauseBtn.addEventListener("click", () => {
+    stopAlarm(); // Stop alarm immediately on click
     if (currentState.isRunning) {
       window.timerAPI.pause();
     } else if (currentState.isPaused) {
@@ -188,10 +247,63 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   resetBtn.addEventListener("click", () => {
+    stopAlarm(); // Stop alarm immediately on reset
     window.timerAPI.reset();
   });
 
   customTitleInput.addEventListener("input", () => {
     window.timerAPI.setTitle(customTitleInput.value.trim());
   });
+
+  const muteBtn = document.getElementById("muteBtn");
+  if (muteBtn) {
+    muteBtn.addEventListener("click", () => {
+      isMuted = !isMuted;
+      muteBtn.textContent = isMuted ? "🔇 Muted" : "🔊 Sound On";
+      muteBtn.style.color = isMuted ? "#ef4444" : "#9ca3af";
+    });
+  }
+
+  const testSoundBtn = document.getElementById("testSoundBtn");
+  if (testSoundBtn) {
+    testSoundBtn.addEventListener("click", () => {
+      playAlarm();
+    });
+  }
+
+  const copyUrlBtn = document.getElementById("copyUrlBtn");
+  const remoteUrlSpan = document.getElementById("remoteUrl");
+  const copyFeedback = document.getElementById("copyFeedback");
+  let feedbackTimeout = null;
+
+  if (copyUrlBtn && remoteUrlSpan && copyFeedback) {
+    copyUrlBtn.addEventListener("click", async () => {
+      const url = remoteUrlSpan.textContent;
+      if (!url) return;
+
+      try {
+        await navigator.clipboard.writeText(url);
+        
+        // Handle feedback animation
+        clearTimeout(feedbackTimeout);
+        copyFeedback.style.opacity = "1";
+        
+        feedbackTimeout = setTimeout(() => {
+          copyFeedback.style.opacity = "0";
+        }, 2000);
+      } catch (err) {
+        console.error("Failed to copy URL: ", err);
+      }
+    });
+
+    // Add visual hover feedback
+    copyUrlBtn.addEventListener("mouseenter", () => {
+       remoteUrlSpan.style.borderColor = "var(--accent)";
+       remoteUrlSpan.style.background = "rgba(59, 130, 246, 0.25)";
+    });
+    copyUrlBtn.addEventListener("mouseleave", () => {
+       remoteUrlSpan.style.borderColor = "rgba(59, 130, 246, 0.2)";
+       remoteUrlSpan.style.background = "var(--accent-soft)";
+    });
+  }
 });

@@ -2,55 +2,162 @@
 <html>
   <head>
     <meta charset="UTF-8" />
-    <title>Down to Earth</title>
+    <title>Down to Earth Projector</title>
     <style>
+      :root {
+        --bg-color: #000;
+        --text-color: #fff;
+        --accent-color: #3b82f6;
+        --danger-color: #ef4444;
+        --ring-size: 80vh;
+      }
+
       html, body {
         margin: 0;
         padding: 0;
-        background: #000;
-        color: #fff;
+        background: var(--bg-color);
+        color: var(--text-color);
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      /* Animated Background Layer */
+      #bg-layer {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: -1;
+        background: radial-gradient(circle at center, #1e3a8a 0%, #000 70%);
+        opacity: 0.6;
+        transition: background 1s ease;
+      }
+
+      #bg-layer.urgency {
+        background: radial-gradient(circle at center, #7f1d1d 0%, #000 70%);
+      }
+
+      #bg-layer.overtime {
+        background: radial-gradient(circle at center, #991b1b 0%, #310000 70%);
+        animation: bg-pulse 2s infinite alternate;
+      }
+
+      @keyframes bg-pulse {
+        from { opacity: 0.6; }
+        to { opacity: 0.9; }
+      }
+
+      .content-wrapper {
         height: 100%;
         width: 100%;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        position: relative;
       }
-      #label {
-        font-size: 15vw;
-        font-weight: 1000;
-        margin-bottom: 1vh;
-      }
-   #time {
-  font-size: 30vw;
-  font-weight: bold;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    "Liberation Mono", "Courier New", monospace;
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum" 1;
-  display: inline-block;
-  min-width: 11ch;
-  text-align: center;
-}
 
-#time.overtime {
-  font-size: 18vw;         
-  color: #fecaca;         
-}
+      #title {
+        font-size: 6vh;
+        margin-bottom: 2vh;
+        color: rgba(255, 255, 255, 0.8);
+        text-align: center;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      #label {
+        font-size: 10vw;
+        font-weight: 1000;
+        margin-bottom: 0.5vh;
+        color: var(--danger-color);
+        text-shadow: 0 0 40px rgba(239, 68, 68, 0.5);
+      }
+
+      #time {
+        font-size: 24vw;
+        font-weight: 800;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.02em;
+        position: relative;
+        z-index: 10;
+        transition: transform 0.3s ease, color 0.3s ease;
+      }
+
+      /* Urgency Pulse (< 60s) */
+      #time.pulsing {
+        animation: pulse 1s infinite cubic-bezier(0.4, 0, 0.6, 1);
+        color: #fca5a5;
+      }
+
+      /* Overtime Shake */
+      body.shake .content-wrapper {
+        animation: shake 0.5s infinite linear;
+      }
+
+      #time.overtime {
+        color: var(--danger-color);
+        text-shadow: 0 0 60px rgba(239, 68, 68, 0.7);
+      }
+
+      @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+      }
+
+      @keyframes shake {
+        0% { transform: translate(0, 0) rotate(0deg); }
+        25% { transform: translate(5px, 5px) rotate(0.5deg); }
+        50% { transform: translate(0, 10px) rotate(0deg); }
+        75% { transform: translate(-5px, 5px) rotate(-0.5deg); }
+        100% { transform: translate(0, 0) rotate(0deg); }
+      }
+
+      /* Progress Bar */
+      .progress-container {
+        width: 60vw;
+        height: 12px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 999px;
+        overflow: hidden;
+        margin-top: 4vh;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        position: relative;
+        z-index: 5;
+      }
+
+      #progress-bar {
+        height: 100%;
+        width: 100%;
+        background: var(--accent-color);
+        border-radius: 999px;
+        transition: width 0.4s linear, background 1s ease;
+      }
+
+      #bg-layer.urgency ~ .content-wrapper #progress-bar {
+        background: var(--danger-color);
+        box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
+      }
     </style>
   </head>
   <body>
-    <div id="title" style="
-  font-size: 10vh;
-  margin-bottom: 2vh;
-  color: #fff;
-  text-align: center;
-  font-weight: 600;
-  font-family: system-ui, sans-serif;">
-</div>
-    <div id="label"></div>
-    <div id="time">00:00</div>
+    <div id="bg-layer"></div>
+    
+    <div class="content-wrapper">
+      <div id="title"></div>
+      <div id="label"></div>
+      <div id="time">00:00</div>
+
+      <div class="progress-container">
+        <div id="progress-bar"></div>
+      </div>
+    </div>
+
     <script src="projector.js"></script>
   </body>
 </html>

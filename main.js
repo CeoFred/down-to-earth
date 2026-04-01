@@ -15,6 +15,7 @@ let projectorWindow = null;
 
 let timerInterval = null;
 let remainingMs = 0;
+let totalMs = 0; // The duration the timer started with
 let isRunning = false;
 let isOvertime = false;
 let overtimeMs = 0; 
@@ -42,7 +43,7 @@ io.on('connection', (socket) => {
   console.log('Remote client connected');
 
   // Send current state to new client
-  socket.emit('timer:state', { remainingMs, isRunning, isOvertime, overtimeMs, isPaused, customTitle });
+  socket.emit('timer:state', { remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused, customTitle });
 
   socket.on('timer:start', (ms) => {
     startTimer(ms);
@@ -66,7 +67,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('timer:getState', () => {
-    socket.emit('timer:state', { remainingMs, isRunning, isOvertime, overtimeMs, isPaused, customTitle });
+    socket.emit('timer:state', { remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused, customTitle });
   });
 });
 
@@ -171,6 +172,7 @@ function startTimer(ms) {
 
   if (typeof ms === 'number') {
     remainingMs = ms;
+    totalMs = ms; // Store initial duration
     overtimeMs = 0;
     isOvertime = false;
   }
@@ -184,7 +186,7 @@ function startTimer(ms) {
   isRunning = true;
   isPaused = false;
 
-  broadcast('timer:update', { remainingMs, isRunning, isOvertime, overtimeMs, isPaused });
+  broadcast('timer:update', { remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused });
 
   timerInterval = setInterval(() => {
     if (!isOvertime) {
@@ -200,7 +202,7 @@ function startTimer(ms) {
       overtimeMs += 1000;
     }
 
-    broadcast('timer:update', { remainingMs, isRunning, isOvertime, overtimeMs, isPaused });
+    broadcast('timer:update', { remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused });
   }, 1000);
 }
 
@@ -208,7 +210,7 @@ function pauseTimer() {
   isRunning = false;
   isPaused = true;
   clearInterval(timerInterval);
-  broadcast('timer:update', { remainingMs, isRunning, isOvertime, overtimeMs, isPaused });
+  broadcast('timer:update', { remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused });
 }
 
 function resumeTimer() {
@@ -217,7 +219,7 @@ function resumeTimer() {
   isRunning = true;
   isPaused = false;
 
-  broadcast('timer:update', { remainingMs, isRunning, isOvertime, overtimeMs, isPaused });
+  broadcast('timer:update', { remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused });
 
   timerInterval = setInterval(() => {
     if (!isOvertime) {
@@ -233,7 +235,7 @@ function resumeTimer() {
       overtimeMs += 1000;
     }
 
-    broadcast('timer:update', { remainingMs, isRunning, isOvertime, overtimeMs, isPaused });
+    broadcast('timer:update', { remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused });
   }, 1000);
 }
 
@@ -241,10 +243,11 @@ function resetTimer() {
   isRunning = false;
   isPaused = false;
   remainingMs = 0;
+  totalMs = 0;
   isOvertime = false;
   overtimeMs = 0;
   clearInterval(timerInterval);
-  broadcast('timer:update', { remainingMs, isRunning, isOvertime, overtimeMs, isPaused });
+  broadcast('timer:update', { remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused });
 }
 
 ipcMain.handle('timer:start', (event, ms) => {
@@ -264,7 +267,7 @@ ipcMain.handle('timer:reset', () => {
 });
 
 ipcMain.handle("timer:getState", () => {
-  return { remainingMs, isRunning, isOvertime, overtimeMs, isPaused, customTitle };
+  return { remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused, customTitle };
 });
 
 ipcMain.handle("timer:setTitle", (event, title) => {
