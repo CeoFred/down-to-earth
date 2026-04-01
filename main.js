@@ -1,5 +1,14 @@
 const { app, BrowserWindow, ipcMain, screen } = require('electron');
 const path = require('path');
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const networkAddress = require('network-address');
+
+// [HOT RELOAD] Listen for file changes and refresh/restart app
+require('electron-reload')(__dirname, {
+  electron: path.join(__dirname, 'node_modules', '.bin', 'electron')
+});
 
 let mainWindow = null;
 let projectorWindow = null;
@@ -11,6 +20,59 @@ let isOvertime = false;
 let overtimeMs = 0; 
 let isPaused = false;
 let customTitle = "";
+
+/* ---------------- SERVER SETUP ---------------- */
+const port = 8321;
+const localIp = networkAddress();
+const serverUrl = `http://${localIp}:${port}`;
+
+const expressApp = express();
+const server = http.createServer(expressApp);
+const io = new Server(server);
+
+// Serve project files for remote web clients
+expressApp.use(express.static(__dirname));
+
+// Route root to renderer.html
+expressApp.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'renderer.html'));
+});
+
+io.on('connection', (socket) => {
+  console.log('Remote client connected');
+
+  // Send current state to new client
+  socket.emit('timer:state', { remainingMs, isRunning, isOvertime, overtimeMs, isPaused, customTitle });
+
+  socket.on('timer:start', (ms) => {
+    startTimer(ms);
+  });
+
+  socket.on('timer:pause', () => {
+    pauseTimer();
+  });
+
+  socket.on('timer:resume', () => {
+    resumeTimer();
+  });
+
+  socket.on('timer:reset', () => {
+    resetTimer();
+  });
+
+  socket.on('timer:setTitle', (title) => {
+    customTitle = title || "";
+    broadcast("timer:title", { title: customTitle });
+  });
+
+  socket.on('timer:getState', () => {
+    socket.emit('timer:state', { remainingMs, isRunning, isOvertime, overtimeMs, isPaused, customTitle });
+  });
+});
+
+server.listen(port, () => {
+  console.log(`Remote control server running at ${serverUrl}`);
+});
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
@@ -26,6 +88,11 @@ function createMainWindow() {
   });
 
   mainWindow.loadFile('renderer.html');
+
+  // Send server info to local renderer when ready
+  mainWindow.webContents.on('did-finish-load', () => {
+    mainWindow.webContents.send('server:info', { url: serverUrl });
+  });
 
     mainWindow.on('closed', () => {
     mainWindow = null;
@@ -84,9 +151,19 @@ app.on('window-all-closed', () => {
 
 /* ---------------- TIMER LOGIC ---------------- */
 function broadcast(channel, data) {
+  // Update Electron windows (Local)
   BrowserWindow.getAllWindows().forEach((win) => {
     win.webContents.send(channel, data);
   });
+
+  // Update Socket.io clients (Remote)
+  if (channel === 'timer:update') {
+    io.emit('timer:update', data);
+  } else if (channel === 'timer:title') {
+    io.emit('timer:title', data);
+  } else if (channel === 'timer:finished') {
+    io.emit('timer:finished', data);
+  }
 }
 
 function startTimer(ms) {

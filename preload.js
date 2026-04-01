@@ -10,4 +10,5 @@ contextBridge.exposeInMainWorld('timerAPI', {
   getState: () => ipcRenderer.invoke('timer:getState'),
   onUpdate: (cb) => ipcRenderer.on('timer:update', (_e, data) => cb(data)),
   onFinished: (cb) => ipcRenderer.on('timer:finished', (_e, data) => cb(data)),
+  onServerInfo: (cb) => ipcRenderer.on('server:info', (_e, data) => cb(data)),
 });

@@ -314,7 +314,7 @@
       <div class="card">
         <div class="card-header">
           <div>
-            <div class="card-title">Countdown Controller</div>
+            <div class="card-title">Timer Controller</div>
             <div class="card-subtitle">
               Drive the projector timer from here.
             </div>
@@ -384,6 +384,11 @@
           <button id="resetBtn" class="btn btn-ghost">Reset</button>
         </div>
 
+        <div id="remoteControlInfo" class="footer" style="display: none; margin-top: 16px; padding-top: 12px; border-top: 1px dashed rgba(148, 163, 184, 0.3); flex-direction: column; align-items: center; gap: 4px;">
+          <span style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);">Remote Control</span>
+          <span id="remoteUrl" style="font-family: monospace; font-size: 13px; color: var(--accent); background: var(--accent-soft); padding: 4px 12px; border-radius: 8px;"></span>
+        </div>
+
         <div class="footer">
           <span>
             <strong>Tip:</strong> Use the presets for faster setup.
@@ -396,6 +401,7 @@
       </div>
     </div>
 
+    <script src="/socket.io/socket.io.js"></script>
     <script src="renderer.js"></script>
   </body>
 </html>
