@@ -37,8 +37,6 @@ Given the current base of your **Countdown Projector**, here are some premium fe
 *   **QR Code Discovery**: Display a QR code on the controller window so anyone can just scan it with their phone to join the remote session instantly.
 *   **Vibration Alerts**: For mobile remote controllers, vibrate the phone when the timer is almost up to alert the person on stage discreetly.
 
-**Which of these sounds most exciting to you?** I can help you implement any of them—starting with the **QR Code** or **Urgency Visuals** might be a great next step!
-
 ### 🖥️ **Full-Screen Projector Display**
 
 * Automatically opens on the second monitor

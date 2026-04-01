@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Down to Earth Projector</title>
     <style>
       :root {
@@ -10,6 +10,25 @@
         --accent-color: #3b82f6;
         --danger-color: #ef4444;
         --ring-size: 80vh;
+
+        /* Customizable Appearance Variables */
+        --timer-size: 24vw;
+        --timer-color: #ffffff;
+        --timer-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+        --title-size: 6vh;
+        --title-color: rgba(255, 255, 255, 0.8);
+        --title-font: system-ui, -apple-system, sans-serif;
+
+        --notes-size: 4.5vh;
+        --notes-color: #ffffff;
+        --notes-font: system-ui, -apple-system, sans-serif;
+
+        --bar-height: 1.5vh; /* Standard talent bar height */
+      }
+
+      *, *::before, *::after {
+        box-sizing: border-box;
       }
 
       html, body {
@@ -17,10 +36,17 @@
         padding: 0;
         background: var(--bg-color);
         color: var(--text-color);
-        height: 100%;
-        width: 100%;
+        /* 🧬 Use dvh to account for mobile browser bars */
+        height: 100dvh; 
+        width: 100vw;
         overflow: hidden;
         font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        display: flex;
+        flex-direction: column; 
+        align-items: center;
+        /* Prevent accidental touch-drag on mobile */
+        touch-action: none;
+        cursor: default;
       }
 
       /* Animated Background Layer */
@@ -50,43 +76,53 @@
         to { opacity: 0.9; }
       }
 
-      .content-wrapper {
-        height: 100%;
-        width: 100%;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        position: relative;
-      }
 
       #title {
-        font-size: 6vh;
-        margin-bottom: 2vh;
-        color: rgba(255, 255, 255, 0.8);
+        font-size: var(--title-size);
+        margin-bottom: 2px; /* Minimal margin to save space */
+        color: var(--title-color);
+        font-family: var(--title-font);
         text-align: center;
         font-weight: 600;
         letter-spacing: 0.1em;
         text-transform: uppercase;
+        max-width: 95vw;
+        overflow-wrap: break-word;
+        flex-shrink: 1; 
+        min-height: 0; /* Professional flex-shrink override */
       }
 
       #label {
-        font-size: 10vw;
+        font-size: clamp(20px, 10vw, 15vh);
         font-weight: 1000;
-        margin-bottom: 0.5vh;
+        margin: 0;
         color: var(--danger-color);
         text-shadow: 0 0 40px rgba(239, 68, 68, 0.5);
+        flex-shrink: 1;
+        min-height: 0;
       }
 
       #time {
-        font-size: 24vw;
+        font-size: var(--timer-size);
         font-weight: 800;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        color: var(--timer-color);
+        font-family: var(--timer-font);
         font-variant-numeric: tabular-nums;
         letter-spacing: -0.02em;
         position: relative;
         z-index: 10;
-        transition: transform 0.3s ease, color 0.3s ease;
+        transition: transform 0.3s ease, color 0.3s ease, font-size 0.3s ease;
+        margin: 0;
+      }
+
+      .timer-stack {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        flex: 1; 
+        width: 100%;
+        min-height: 0; /* Ensure the center stack can shrink to fit */
       }
 
       /* Urgency Pulse (< 60s) */
@@ -118,46 +154,170 @@
         100% { transform: translate(0, 0) rotate(0deg); }
       }
 
-      /* Progress Bar */
+      /* Locked Bottom Talent Bar (Edge-to-Edge Floor) */
       .progress-container {
-        width: 60vw;
-        height: 12px;
+        width: 100%;
+        height: var(--bar-height);
         background: rgba(255, 255, 255, 0.05);
-        border-radius: 999px;
-        overflow: hidden;
-        margin-top: 4vh;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        position: relative;
-        z-index: 5;
+        /* 🛡️ Remove overflow-hidden to allow the marker to "float" above the bar */
+        overflow: visible; 
+        display: flex;
+        justify-content: flex-end;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        z-index: 1001;
+        flex-shrink: 0; 
+        position: relative; 
+        /* 📱 Professional bottom-safe area handling */
+        margin-bottom: constant(safe-area-inset-bottom);
+        margin-bottom: env(safe-area-inset-bottom);
       }
 
-      #progress-bar {
+      .progress-segment {
         height: 100%;
-        width: 100%;
-        background: var(--accent-color);
-        border-radius: 999px;
-        transition: width 0.4s linear, background 1s ease;
+        transition: width 0.4s linear, opacity 0.3s ease;
+        /* 🛡️ Move overflow-hidden here to clip the bar fill */
+        overflow: hidden; 
       }
+
+      #segment-green { 
+        background: #22c55e;
+        box-shadow: -5px 0 15px rgba(34, 197, 94, 0.2);
+      }
+      #segment-yellow { 
+        background: #eab308;
+      }
+      #segment-red { 
+        background: #ef4444;
+      }
+
+   
+
+      /* Flashing Animations */
+      @keyframes flash-3x {
+        0%, 33%, 66%, 100% { opacity: 1; }
+        16%, 50%, 83% { opacity: 0; }
+      }
+      .flashing-3x {
+        animation: flash-3x 1.5s ease-in-out;
+      }
+
+      @keyframes flash-indefinite {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.2; }
+      }
+      .flashing-indefinite {
+        animation: flash-indefinite 1s infinite alternate ease-in-out;
+      }
+
+      /* Focus Mode Layout Engine */
+      .content-wrapper { transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+      #title, #time, #notes-container, .progress-container { 
+        transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1); 
+        margin: 1.5vh 0;
+      }
+
+      body.focus-mode #title, 
+      body.focus-mode #time, 
+      body.focus-mode #notes-container {
+        opacity: 0.4;
+        transform: scale(0.7);
+      }
+
+      body.focus-mode .focused-item {
+        opacity: 1 !important;
+        transform: scale(1.15) !important;
+        font-weight: 900 !important;
+        z-index: 50;
+      }
+      
+      /* Specific orders for Focus Mode */
+      body.focus-mode .item-top { order: 1; }
+      body.focus-mode .focused-item { order: 2; }
+      body.focus-mode .item-bottom { order: 3; }
+      
+      body.focus-mode.focus-notes .progress-container { display: none !important; }
 
       #bg-layer.urgency ~ .content-wrapper #progress-bar {
         background: var(--danger-color);
         box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
+      }
+
+      #notes-container {
+        width: 95vw;
+        max-width: 95vw;
+        padding: 1vh 0;
+        text-align: center;
+        opacity: 0;
+        display: none;
+        transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        z-index: 100;
+        flex-shrink: 2; /* 🧬 Strategic shrink-to-fit behavior */
+        margin-bottom: 1vh;
+        max-height: 25vh; /* 🛡️ Prevent pushing other elements off-screen */
+        overflow-y: auto;
+      }
+
+      #notes-container.active {
+        opacity: 1;
+        display: block; /* Participates in flex flow when active */
+      }
+
+      #notes-content {
+        font-size: var(--notes-size);
+        color: var(--notes-color);
+        font-family: var(--notes-font);
+        font-weight: 500;
+        line-height: 1.4;
+        margin: 0;
+        text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+      }
+
+      #notes-label {
+        font-size: 1.8vh;
+        color: var(--accent-color);
+        text-transform: uppercase;
+        letter-spacing: 0.2em;
+        margin-bottom: 1.5vh;
+        font-weight: 800;
+        display: block;
       }
     </style>
   </head>
   <body>
     <div id="bg-layer"></div>
     
-    <div class="content-wrapper">
-      <div id="title"></div>
+    <div id="title"></div>
+    
+    <div class="timer-stack">
       <div id="label"></div>
       <div id="time">00:00</div>
-
-      <div class="progress-container">
-        <div id="progress-bar"></div>
-      </div>
     </div>
 
+    <div id="notes-container">
+      <p id="notes-content"></p>
+    </div>
+
+    <div class="progress-container">
+      <div id="segment-green" class="progress-segment"></div>
+      <div id="segment-yellow" class="progress-segment"></div>
+      <div id="segment-red" class="progress-segment"></div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
     <script src="projector.js"></script>
+
+    <!-- REMOTE PIN OVERLAY (Visible only when remote and unauthenticated) -->
+    <div id="remoteAuthOverlay" style="display: none; position: fixed; inset: 0; background: #000; z-index: 9999; flex-direction: column; align-items: center; justify-content: center; padding: 20px; text-align: center; backdrop-filter: blur(20px);">
+      <div style="width: 100%; max-width: 320px; background: rgba(59, 130, 246, 0.05); padding: 40px 30px; border-radius: 32px; border: 1px solid rgba(59, 130, 246, 0.1); box-shadow: 0 40px 100px rgba(0, 0, 0, 0.8);">
+        <div style="font-size: 40px; margin-bottom: 20px;">🔒</div>
+        <h2 style="font-size: 20px; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.02em; color: #fff;">Talent View Locked</h2>
+        <p style="font-size: 13px; color: rgba(255, 255, 255, 0.5); margin-bottom: 24px;">Enter the 4-digit security PIN shown on the host computer.</p>
+        
+        <input type="text" id="remotePinInput" maxlength="4" placeholder="••••" style="width: 100%; height: 72px; background: rgba(15, 23, 42, 0.5); border: 2px solid rgba(255, 255, 255, 0.1); border-radius: 16px; text-align: center; font-size: 32px; font-family: ui-monospace; font-weight: 900; color: white; margin-bottom: 20px; outline: none; transition: border-color 0.3s ease; box-shadow: inset 0 2px 10px rgba(0,0,0,0.5);" 
+        oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+        
+        <button id="authSubmitBtn" style="width: 100%; padding: 16px; font-weight: 800; border-radius: 16px; background: #3b82f6; color: white; border: none; cursor: pointer; transition: transform 0.2s ease;">Unlock Projector</button>
+      </div>
+    </div>
   </body>
 </html>

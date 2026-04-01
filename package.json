@@ -42,6 +42,8 @@
   "dependencies": {
     "express": "^5.2.1",
     "network-address": "^1.1.2",
-    "socket.io": "^4.8.3"
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.8.3",
+    "tunnelmole": "^2.4.0"
   }
 }

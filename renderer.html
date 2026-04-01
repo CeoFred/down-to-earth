@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Down to Earth Controller</title>
+    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
       :root {
         --bg: #050816;
@@ -39,6 +41,7 @@
         width: 100%;
         max-width: 640px;
         margin: 0 auto;
+        display: block; /* Visible by default for Host */
       }
 
       .card {
@@ -138,9 +141,117 @@
         text-shadow: 0 0 30px rgba(59, 130, 246, 0.3);
       }
 
-      .overtime {
-        color: var(--danger);
+      .tab-nav {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 20px;
+        background: rgba(15, 23, 42, 0.6);
+        padding: 4px;
+        border-radius: 14px;
+        border: 1px solid rgba(148, 163, 184, 0.1);
       }
+
+      .tab-btn {
+        flex: 1;
+        padding: 8px 4px;
+        border-radius: 10px;
+        border: none;
+        background: transparent;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .tab-btn.active {
+        background: var(--accent);
+        color: white;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+      }
+
+      .tab-content {
+        display: none;
+        animation: fadeIn 0.3s ease;
+      }
+
+      .tab-content.active {
+        display: block;
+      }
+
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(4px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      .playlist-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px;
+        background: rgba(15, 23, 42, 0.5);
+        border-radius: 12px;
+        margin-bottom: 8px;
+        border: 1px solid rgba(148, 163, 184, 0.1);
+      }
+
+      .playlist-item .info {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .playlist-item .title {
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .playlist-item .time {
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .setting-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 0;
+        border-bottom: 1px dashed rgba(148, 163, 184, 0.1);
+      }
+
+      .setting-row:last-child { border-bottom: none; }
+
+      .toggle {
+        position: relative;
+        display: inline-block;
+        width: 44px;
+        height: 24px;
+      }
+
+      .toggle input { opacity: 0; width: 0; height: 0; }
+
+      .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background-color: rgba(148, 163, 184, 0.3);
+        transition: .4s;
+        border-radius: 24px;
+      }
+
+      .slider:before {
+        position: absolute;
+        content: "";
+        height: 18px; width: 18px;
+        left: 3px; bottom: 3px;
+        background-color: white;
+        transition: .4s;
+        border-radius: 50%;
+      }
+
+      input:checked + .slider { background-color: var(--accent); }
+      input:checked + .slider:before { transform: translateX(20px); }
 
       .inputs-row {
         display: flex;
@@ -312,87 +423,442 @@
     </style>
   </head>
   <body>
-    <div class="shell">
+    <div id="mainShell" class="shell">
       <div class="card">
         <div class="card-header">
           <div>
-            <div class="card-title">Timer Controller</div>
-            <div class="card-subtitle">
-              Drive the projector timer from here.
+            <div class="card-title">Controller</div>
+            <div class="card-subtitle">Production Deck</div>
+          </div>
+          <div id="statusPill" class="status-pill" data-state="paused">Idle</div>
+        </div>
+
+        <nav class="tab-nav">
+          <button class="tab-btn active" data-tab="timer">Timer</button>
+          <button class="tab-btn" data-tab="playlist">Playlist</button>
+          <button class="tab-btn" data-tab="presets">Presets</button>
+          <button class="tab-btn" data-tab="appearance">Appearance</button>
+          <button class="tab-btn" data-tab="output">Output</button>
+          <button class="tab-btn" data-tab="settings">Settings</button>
+        </nav>
+
+        <!-- TIMER TAB -->
+        <div id="timerTab" class="tab-content active">
+          <div class="timer-display">
+            <div class="timer-label" id="timerLabel">Time Remaining</div>
+            <div class="timer-value" id="display">00:00</div>
+          </div>
+
+          <div class="inputs-row">
+            <div class="field">
+              <label class="field-label" for="minutes">Minutes</label>
+              <input id="minutes" type="number" min="0" value="5" class="field-input" />
+            </div>
+            <div class="field">
+              <label class="field-label" for="seconds">Seconds</label>
+              <input id="seconds" type="number" min="0" max="59" value="0" class="field-input" />
             </div>
           </div>
-          <div id="statusPill" class="status-pill" data-state="paused">
-            Paused
+
+
+          <div class="field" style="margin-bottom: 14px;">
+            <label class="field-label" for="customTitle">Title</label>
+            <input id="customTitle" type="text" placeholder="e.g. Sermon Timer" class="field-input" />
+          </div>
+
+          <div class="field" style="margin-bottom: 14px;">
+            <label class="field-label" for="stageNotes">Stage Notes (Visible on Projector)</label>
+            <textarea id="stageNotes" placeholder="e.g. Look at Camera 2, Wrap up now" class="field-input" style="height: 60px; resize: none; padding: 10px;"></textarea>
+          </div>
+
+          <div class="controls-row" style="margin-bottom: 12px;">
+            <button id="startBtn" class="btn btn-primary">Start</button>
+            <button id="pauseBtn" class="btn btn-secondary" disabled>Pause</button>
+            <button id="resetBtn" class="btn btn-ghost">Reset</button>
+          </div>
+
+          <div class="controls-row">
+            <button id="savePresetBtn" class="btn btn-ghost" style="font-size: 11px; border-style: solid; border-width: 1px;">
+              💾 Save as Preset
+            </button>
+            <button id="addToPlaylistBtn" class="btn btn-ghost" style="font-size: 11px; border-style: solid; border-width: 1px;">
+              ➕ Add to Playlist
+            </button>
           </div>
         </div>
 
-        <div class="timer-display">
-          <div class="timer-label" id="timerLabel">Time Remaining</div>
-          <div class="timer-value" id="display">00:00</div>
-        </div>
-
-        <div class="inputs-row">
-          <div class="field">
-            <label class="field-label" for="minutes">Minutes</label>
-            <input
-              id="minutes"
-              type="number"
-              min="0"
-              value="5"
-              class="field-input"
-            />
+        <!-- PLAYLIST TAB -->
+        <div id="playlistTab" class="tab-content">
+          <div id="playlistContainer" style="min-height: 120px; max-height: 300px; overflow-y: auto; margin-bottom: 16px;">
+            <div style="text-align: center; color: var(--muted); padding-top: 40px; font-size: 12px;">
+              Playlist is empty. Add timers to get started.
+            </div>
           </div>
-          <div class="field">
-            <label class="field-label" for="seconds">Seconds</label>
-            <input
-              id="seconds"
-              type="number"
-              min="0"
-              max="59"
-              value="0"
-              class="field-input"
-            />
+          <div class="controls-row">
+            <button id="prevBtn" class="btn btn-ghost" style="flex: 0.5;">Prev</button>
+            <button id="nextBtn" class="btn btn-primary">Next Item</button>
+            <button id="clearPlaylistBtn" class="btn btn-ghost" style="flex: 0.5;">Clear</button>
           </div>
         </div>
 
-        <div class="field" style="margin-bottom: 14px;">
-  <label class="field-label" for="customTitle">Title (optional)</label>
-  <input
-    id="customTitle"
-    type="text"
-    placeholder="e.g. Sermon Timer, Prayer Session, Youth Meeting"
-    class="field-input"
-  />
-</div>
-
-        <div class="presets-row">
-          <button class="preset-btn" data-minutes="5">5 min</button>
-          <button class="preset-btn" data-minutes="10">10 min</button>
-          <button class="preset-btn" data-minutes="15">15 min</button>
-          <button class="preset-btn" data-minutes="30">30 min</button>
-          <button class="preset-btn" data-minutes="45">45 min</button>
-          <button class="preset-btn" data-minutes="50">50 min</button>
-          <button class="preset-btn" data-minutes="60">60 min</button>
-
+        <!-- PRESETS TAB -->
+        <div id="presetsTab" class="tab-content">
+          <div class="field-label" style="margin-bottom: 10px;">Standard Presets</div>
+          <div class="presets-row">
+            <button class="preset-btn" data-minutes="5">5m</button>
+            <button class="preset-btn" data-minutes="10">10m</button>
+            <button class="preset-btn" data-minutes="20">20m</button>
+            <button class="preset-btn" data-minutes="30">30m</button>
+            <button class="preset-btn" data-minutes="45">45m</button>
+            <button class="preset-btn" data-minutes="60">60m</button>
+          </div>
+          
+          <div class="field-label" style="margin: 20px 0 10px;">Custom Presets</div>
+          <div id="customPresetsContainer" class="presets-row">
+            <div style="font-size: 11px; color: var(--muted); width: 100%; text-align: center;">No custom presets yet.</div>
+          </div>
         </div>
 
-        <div class="controls-row" style="margin-bottom: 12px; gap: 8px;">
-          <button id="muteBtn" class="preset-btn" style="flex: 1; border-radius: 12px; padding: 8px;">
-            🔊 Sound On
-          </button>
-          <button id="testSoundBtn" class="preset-btn" style="flex: 1; border-radius: 12px; padding: 8px;">
-            🔔 Test Sound
-          </button>
+        <!-- APPEARANCE TAB -->
+        <div id="appearanceTab" class="tab-content" style="padding: 4px;">
+          <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--accent); font-weight: 800; margin-bottom: 20px; display: flex; align-items: center; gap: 8px;">
+            <span style="width: 20px; height: 1px; background: var(--accent); opacity: 0.3;"></span>
+            Design & Typography
+          </div>
+
+          <!-- Timer Layout -->
+          <div class="setting-group" style="background: rgba(15, 23, 42, 0.3); padding: 16px; border-radius: 16px; margin-bottom: 20px; border: 1px solid rgba(148, 163, 184, 0.1);">
+            <div style="font-size: 13px; font-weight: 700; color: white; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+              <span style="color: var(--accent);"> clock </span> Timer Clock
+            </div>
+            
+            <div class="setting-row" style="margin-bottom: 12px;">
+              <div><div style="font-size: 13px; font-weight: 600;">Size</div><div style="font-size: 10px; color: var(--muted);">e.g. 24vw</div></div>
+              <input type="text" id="appearanceTimerSize" class="field-input" style="width: 80px; padding: 6px 10px; text-align: center;">
+            </div>
+            <div class="setting-row" style="margin-bottom: 12px;">
+              <div><div style="font-size: 13px; font-weight: 600;">Color</div><div style="font-size: 10px; color: var(--muted);">Primary hex color</div></div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <input type="color" id="appearanceTimerColor" style="width: 30px; height: 30px; border: none; background: none; cursor: pointer; padding: 0;">
+                <input type="text" id="appearanceTimerColorHex" class="field-input" style="width: 80px; padding: 6px 10px; font-family: monospace; font-size: 11px; text-align: center;">
+              </div>
+            </div>
+            <div class="setting-row">
+              <div><div style="font-size: 13px; font-weight: 600;">Font</div></div>
+              <select id="appearanceTimerFont" class="field-input" style="width: 140px; padding: 6px;">
+                <option value="ui-monospace">Monospace</option>
+                <option value="system-ui">Sans Serif</option>
+                <option value="'Oswald'">Oswald (Condensed)</option>
+                <option value="'Inter'">Inter (Modern)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Section Label -->
+          <div class="setting-group" style="background: rgba(15, 23, 42, 0.3); padding: 16px; border-radius: 16px; margin-bottom: 20px; border: 1px solid rgba(148, 163, 184, 0.1);">
+            <div style="font-size: 13px; font-weight: 700; color: white; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+              <span style="color: var(--accent);">◓ title </span> Segment Title
+            </div>
+            <div class="setting-row" style="margin-bottom: 12px;">
+              <div><div style="font-size: 13px; font-weight: 600;">Size</div><div style="font-size: 10px; color: var(--muted);">e.g. 6vh</div></div>
+              <input type="text" id="appearanceTitleSize" class="field-input" style="width: 80px; padding: 6px 10px; text-align: center;">
+            </div>
+            <div class="setting-row">
+              <div><div style="font-size: 13px; font-weight: 600;">Color</div></div>
+              <input type="color" id="appearanceTitleColor" style="width: 30px; height: 30px; border: none; background: none; cursor: pointer;">
+            </div>
+          </div>
+
+          <!-- Stage Notes -->
+          <div class="setting-group" style="background: rgba(15, 23, 42, 0.3); padding: 16px; border-radius: 16px; margin-bottom: 20px; border: 1px solid rgba(148, 163, 184, 0.1);">
+            <div style="font-size: 13px; font-weight: 700; color: white; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+              <span style="color: var(--accent);">◗ note </span> Stage Notes
+            </div>
+            <div class="setting-row" style="margin-bottom: 12px;">
+              <div><div style="font-size: 13px; font-weight: 600;">Size</div><div style="font-size: 10px; color: var(--muted);">e.g. 4.5vh</div></div>
+              <input type="text" id="appearanceNotesSize" class="field-input" style="width: 80px; padding: 6px 10px; text-align: center;">
+            </div>
+            <div class="setting-row">
+              <div><div style="font-size: 13px; font-weight: 600;">Color</div></div>
+              <input type="color" id="appearanceNotesColor" style="width: 30px; height: 30px; border: none; background: none; cursor: pointer;">
+            </div>
+          </div>
+
+          <!-- Progress Bar -->
+          <div class="setting-group" style="background: rgba(15, 23, 42, 0.3); padding: 16px; border-radius: 16px; margin-bottom: 20px; border: 1px solid rgba(148, 163, 184, 0.1);">
+            <div style="font-size: 13px; font-weight: 700; color: white; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+              <span style="color: var(--accent);">▭ bar </span> Progress Bar
+            </div>
+            <div class="setting-row" style="margin-bottom: 12px;">
+              <div><div style="font-size: 13px; font-weight: 600;">Track Color</div></div>
+              <input type="color" id="appearanceBarColor" style="width: 30px; height: 30px; border: none; background: none; cursor: pointer;">
+            </div>
+            <div class="setting-row">
+              <div><div style="font-size: 13px; font-weight: 600;">Height</div><div style="font-size: 10px; color: var(--muted);">e.g. 12px</div></div>
+              <input type="text" id="appearanceBarHeight" class="field-input" style="width: 80px; padding: 6px 10px; text-align: center;">
+            </div>
+          </div>
+
+          <!-- Focus Mode -->
+          <div class="setting-group" style="background: rgba(59, 130, 246, 0.1); padding: 16px; border-radius: 16px; margin-bottom: 20px; border: 1px solid rgba(59, 130, 246, 0.2);">
+            <div style="font-size: 13px; font-weight: 800; color: var(--accent); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; text-transform: uppercase; letter-spacing: 0.1em;">
+              ⭐ Focus Mode
+            </div>
+            
+            <div class="setting-row" style="margin-bottom: 12px;">
+              <div>
+                <div style="font-size: 13px; font-weight: 600;">Enable Focus</div>
+                <div style="font-size: 10px; color: var(--muted);">Spotlight a specific item</div>
+              </div>
+              <label class="toggle" style="transform: scale(0.85);">
+                <input type="checkbox" id="focusModeEnabled">
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="setting-row">
+              <div><div style="font-size: 13px; font-weight: 600;">Target Item</div></div>
+              <select id="focusModeItem" class="field-input" style="width: 120px; padding: 6px;">
+                <option value="timer">Timer</option>
+                <option value="notes">Stage Notes</option>
+                <option value="title">Segment Title</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="margin-top: 24px; padding-bottom: 10px; display: flex; gap: 12px;">
+            <button id="saveAppearanceBtn" class="btn btn-primary" style="flex: 2; padding: 14px;">Apply Theme Changes</button>
+            <button id="resetAppearanceBtn" class="btn btn-ghost" style="flex: 1; padding: 14px; border: 1px solid rgba(255, 255, 255, 0.1);">Reset</button>
+          </div>
         </div>
 
-        <div class="controls-row">
-          <button id="startBtn" class="btn btn-primary">
-            Start
-          </button>
-          <button id="pauseBtn" class="btn btn-secondary" disabled>
-            Pause
-          </button>
-          <button id="resetBtn" class="btn btn-ghost">Reset</button>
+        <!-- OUTPUT TAB -->
+        <div id="outputTab" class="tab-content" style="padding: 4px;">
+          <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--accent); font-weight: 800; margin-bottom: 20px; display: flex; align-items: center; gap: 8px;">
+            <span style="width: 20px; height: 1px; background: var(--accent); opacity: 0.3;"></span>
+            Remote Access Links
+          </div>
+
+          <!-- Remote Controller -->
+          <div class="setting-group" style="background: rgba(15, 23, 42, 0.3); padding: 20px; border-radius: 16px; margin-bottom: 20px; border: 1px solid rgba(148, 163, 184, 0.1);">
+            <div style="font-size: 13px; font-weight: 700; color: white; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+               <span style="color: var(--accent);">🎮</span> Remote Controller
+            </div>
+            <p style="font-size: 11px; color: var(--muted); margin-bottom: 16px;">Access the production deck from any mobile device or tablet on the same network.</p>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="linkController" value="Loading..." readonly class="field-input" style="flex: 1; font-family: monospace; font-size: 12px; background: rgba(0,0,0,0.3);">
+              <button onclick="copyToClipboard('linkController')" class="btn btn-secondary" style="padding: 10px 16px; font-size: 11px;">Copy</button>
+            </div>
+          </div>
+
+          <!-- Remote Viewer -->
+          <div class="setting-group" style="background: rgba(15, 23, 42, 0.3); padding: 20px; border-radius: 16px; margin-bottom: 20px; border: 1px solid rgba(148, 163, 184, 0.1);">
+            <div style="font-size: 13px; font-weight: 700; color: white; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+               <span style="color: var(--accent);">🎬</span> Remote Talent View
+            </div>
+            <p style="font-size: 11px; color: var(--muted); margin-bottom: 16px;">Mirror the projection screen on remote monitors or talent screens.</p>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="linkProjector" value="Loading..." readonly class="field-input" style="flex: 1; font-family: monospace; font-size: 12px; background: rgba(0,0,0,0.3);">
+              <button onclick="copyToClipboard('linkProjector')" class="btn btn-secondary" style="padding: 10px 16px; font-size: 11px;">Copy</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- SETTINGS TAB -->
+        <div id="settingsTab" class="tab-content">
+          <div class="setting-row">
+            <div>
+              <div style="font-size: 14px; font-weight: 600;">Auto-Advance</div>
+              <div style="font-size: 11px; color: var(--muted);">Start next playlist item automatically</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="autoAdvanceToggle">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div style="font-size: 14px; font-weight: 600;">TTS Announcements</div>
+              <div style="font-size: 11px; color: var(--muted);">Spoken reminders for milestones</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="ttsToggle" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div style="font-size: 14px; font-weight: 600;">Announce Section Titles</div>
+              <div style="font-size: 11px; color: var(--muted);">Speak title when playlist item starts</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="readPlaylistTitleToggle" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-row" style="flex-direction: column; align-items: flex-start; gap: 12px; padding: 16px; background: rgba(15, 23, 42, 0.3); border-radius: 16px; margin: 12px 0;">
+            <div style="font-size: 13px; font-weight: 800; color: var(--accent); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px;">Projector Visibility</div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%;">
+              <div class="setting-row" style="margin: 0; padding: 0;">
+                <span style="font-size: 13px;">Show Timer</span>
+                <label class="toggle" style="transform: scale(0.85);">
+                  <input type="checkbox" id="showTimerToggle" checked>
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="setting-row" style="margin: 0; padding: 0;">
+                <span style="font-size: 13px;">Show Bar</span>
+                <label class="toggle" style="transform: scale(0.85);">
+                  <input type="checkbox" id="showBarToggle" checked>
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="setting-row" style="margin: 0; padding: 0;">
+                <span style="font-size: 13px;">Show Title</span>
+                <label class="toggle" style="transform: scale(0.85);">
+                  <input type="checkbox" id="showTitleToggle" checked>
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="setting-row" style="margin: 0; padding: 0;">
+                <span style="font-size: 13px;">Show Notes</span>
+                <label class="toggle" style="transform: scale(0.85);">
+                  <input type="checkbox" id="showNotesToggle" checked>
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Global Connectivity Section -->
+          <div class="setting-row" style="flex-direction: column; align-items: flex-start; gap: 16px; padding: 20px; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 20px; margin: 16px 0;">
+            <div style="width: 100%; display: flex; justify-content: space-between; align-items: center;">
+              <div style="font-size: 13px; font-weight: 800; color: var(--accent); text-transform: uppercase; letter-spacing: 0.1em;">Production Access Hub</div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; font-weight: 600;">Security PIN</span>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <div id="pinDisplay" style="font-family: ui-monospace; font-weight: 900; background: var(--accent); color: white; padding: 4px 10px; border-radius: 8px; font-size: 16px; letter-spacing: 2px;">----</div>
+                  <button id="refreshPinBtn" title="New Security Code" style="background: none; border: none; cursor: pointer; padding: 0; display: flex; align-items: center; opacity: 0.5; transition: opacity 0.2s;">🔄</button>
+                </div>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 20px; width: 100%; align-items: flex-start;">
+              <div id="qrcode" style="padding: 12px; background: white; border-radius: 12px; display: flex; align-items: center; justify-content: center; min-width: 140px; min-height: 140px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);"></div>
+              
+              <div style="flex: 1; display: flex; flex-direction: column; gap: 12px;">
+                <!-- Local Access -->
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <div style="font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase;">Local Network (WiFi)</div>
+                  <div style="display: flex; gap: 6px;">
+                    <div id="localUrlDisplay" style="flex: 1; font-size: 11px; font-family: ui-monospace; background: rgba(15, 23, 42, 0.5); padding: 8px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); word-break: break-all; opacity: 0.8;">Detecting...</div>
+                    <button onclick="copyToClipboard(document.getElementById('localUrlDisplay').textContent)" style="padding: 0 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white; cursor: pointer; transition: background 0.2s;">📋</button>
+                  </div>
+                </div>
+
+                <!-- Global Access -->
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <div style="font-size: 10px; font-weight: 700; color: #f38020; text-transform: uppercase;">Global Cloud Access</div>
+                  <div style="display: flex; gap: 6px;">
+                    <div id="globalUrlDisplay" style="flex: 1; font-size: 11px; font-family: ui-monospace; background: rgba(15, 23, 42, 0.5); padding: 8px; border-radius: 6px; border: 1px solid rgba(243, 128, 32, 0.2); word-break: break-all;">Configure Cloud Tunnel...</div>
+                    <button id="copyGlobalBtn" onclick="copyToClipboard(document.getElementById('globalUrlDisplay').textContent)" style="padding: 0 10px; background: rgba(243, 128, 32, 0.1); border: 1px solid rgba(243, 128, 32, 0.3); border-radius: 6px; color: #f38020; cursor: pointer; display: none;">📋</button>
+                  </div>
+                </div>
+
+                <div style="padding-top: 4px; display: flex; gap: 8px;">
+                  <button id="startTunnelBtn" class="btn btn-primary" style="flex: 1; padding: 10px 16px; font-size: 12px; font-weight: 700; border-radius: 10px;">Go Global (Public Cloud)</button>
+                  <button id="stopTunnelBtn" class="btn" style="display: none; padding: 10px 16px; font-size: 12px; font-weight: 700; border-radius: 10px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444;">Disable Global Access</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Connected Devices Section -->
+          <div class="setting-card" style="margin-top: 16px;">
+            <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Connected Remote Devices</span>
+              <span id="deviceCountBadge" style="font-size: 10px; background: var(--accent); color: white; padding: 2px 8px; border-radius: 10px;">0 Active</span>
+            </div>
+            <div style="max-height: 200px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+              <table style="width: 100%; border-collapse: collapse; font-size: 11px; color: var(--text);">
+                <thead style="background: rgba(255,255,255,0.03); text-transform: uppercase; font-size: 9px; letter-spacing: 0.05em; color: var(--muted);">
+                  <tr>
+                    <th style="padding: 10px; text-align: left;">Device Info</th>
+                    <th style="padding: 10px; text-align: left;">Status</th>
+                    <th style="padding: 10px; text-align: right;">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="devicesTableBody">
+                  <tr>
+                    <td colspan="3" style="padding: 20px; text-align: center; color: var(--muted);">No remote devices connected.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="setting-row" style="flex-direction: column; align-items: flex-start; gap: 12px; margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.05);">
+            <div style="font-size: 15px; font-weight: 700; color: var(--accent); letter-spacing: 0.02em; text-transform: uppercase;">Wrap-up Timing</div>
+            <div style="font-size: 11px; color: var(--muted); margin-top: -4px;">Define the yellow and red urgency zones for talent signaling.</div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; margin-top: 8px;">
+              <div>
+                <label style="display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; margin-bottom: 6px; color: #eab308;">Yellow Zone (Sec)</label>
+                <input id="wrapUpYellow" type="number" class="field-input" placeholder="60" style="padding: 10px;" />
+              </div>
+              <div>
+                <label style="display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; margin-bottom: 6px; color: #ef4444;">Red Zone (Sec)</label>
+                <input id="wrapUpRed" type="number" class="field-input" placeholder="30" style="padding: 10px;" />
+              </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 10px; width: 100%; margin-top: 8px;">
+              <label class="toggle-container" style="justify-content: space-between;">
+                <span style="font-size: 13px;">Flash on Red Entry (3x)</span>
+                <input type="checkbox" id="wrapUpFlashRed">
+                <span class="toggle-slider"></span>
+              </label>
+              <label class="toggle-container" style="justify-content: space-between;">
+                <span style="font-size: 13px;">Pulse indefinitely on Overtime</span>
+                <input type="checkbox" id="wrapUpFlashOvertime">
+                <span class="toggle-slider"></span>
+              </label>
+              <label class="toggle-container" style="justify-content: space-between;">
+                <span style="font-size: 13px;">Play beep on zone transition</span>
+                <input type="checkbox" id="wrapUpSoundEnabled">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="setting-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+            <div style="font-size: 14px; font-weight: 600;">Alarm Sound</div>
+            <select id="alarmSoundSelect" class="field-input" style="padding: 10px;">
+              <option value="pulse">Emergency Pulse (Current)</option>
+              <option value="chime">Digital Chime</option>
+              <option value="gong">Temple Gong</option>
+              <option value="none">No Sound</option>
+            </select>
+          </div>
+
+          <div class="setting-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+            <div style="font-size: 14px; font-weight: 600;">Milestone Reminders</div>
+            <div style="font-size: 11px; color: var(--muted);">Seconds to announce (e.g. 300, 60, 30)</div>
+            <input id="milestonesInput" type="text" placeholder="300, 60, 30" class="field-input" style="padding: 10px;" />
+          </div>
+
+          <div class="controls-row" style="margin-top: 16px;">
+            <button id="saveSettingsBtn" class="btn btn-primary" style="flex: 1;">Save All Settings</button>
+          </div>
+
+          <div class="controls-row" style="margin-top: 12px;">
+            <button id="muteBtn" class="btn btn-secondary">🔊 Audio On</button>
+            <button id="testSoundBtn" class="btn btn-ghost">🔔 Test Alarm</button>
+          </div>
         </div>
 
         <div id="remoteControlInfo" class="footer" style="display: none; margin-top: 16px; padding-top: 12px; border-top: 1px dashed rgba(148, 163, 184, 0.3); flex-direction: column; align-items: center; gap: 8px;">
@@ -415,7 +881,22 @@
       </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <script src="renderer.js"></script>
+
+    <!-- REMOTE PIN OVERLAY (Visible only when remote and unauthenticated) -->
+    <div id="remoteAuthOverlay" style="display: none; position: fixed; inset: 0; background: var(--bg); z-index: 9999; flex-direction: column; align-items: center; justify-content: center; padding: 20px; text-align: center; backdrop-filter: blur(20px);">
+      <div style="width: 100%; max-width: 320px; background: rgba(59, 130, 246, 0.1); padding: 40px 30px; border-radius: 32px; border: 1px solid rgba(59, 130, 246, 0.2); box-shadow: 0 40px 100px rgba(0, 0, 0, 0.5);">
+        <div style="font-size: 40px; margin-bottom: 20px;">🔒</div>
+        <h2 style="font-size: 20px; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.02em;">Production Lock</h2>
+        <p style="font-size: 13px; color: var(--muted); margin-bottom: 24px;">Enter the 4-digit security PIN shown on the host computer.</p>
+        
+        <input type="text" id="remotePinInput" maxlength="4" placeholder="••••" style="width: 100%; height: 72px; background: rgba(15, 23, 42, 0.5); border: 2px solid rgba(255, 255, 255, 0.1); border-radius: 16px; text-align: center; font-size: 32px; font-family: ui-monospace; font-weight: 900; color: white; margin-bottom: 20px; outline: none; transition: border-color 0.3s ease;" 
+        oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+        
+        <button id="authSubmitBtn" class="btn btn-primary" style="width: 100%; padding: 16px; font-weight: 800; border-radius: 16px; box-shadow: 0 10px 30px rgba(59, 130, 246, 0.4);">Unlock Deck</button>
+      </div>
+    </div>
   </body>
 </html>

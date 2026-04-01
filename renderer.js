@@ -2,9 +2,128 @@
 if (typeof window.timerAPI === 'undefined') {
   // We are running in a web browser (Remote Device)
   const socket = io();
+  
+  // REMOTE AUTHENTICATION LOGIC
+  const isRemote = true; // explicitly true if bridge is missing
+  
+  const initAuth = () => {
+    const authOverlay = document.getElementById('remoteAuthOverlay');
+    const mainShell = document.getElementById('mainShell');
+    const pinInput = document.getElementById('remotePinInput');
+    const authBtn = document.getElementById('authSubmitBtn');
+
+    // Show auth overlay for remote by default
+    if (isRemote && authOverlay) {
+      authOverlay.style.display = 'flex';
+    }
+    
+    // Hide main UI for remote by default
+    if (isRemote && mainShell) {
+      mainShell.style.display = 'none';
+    }
+
+    const getDeviceId = () => {
+      let id = localStorage.getItem('remote_device_id');
+      if (!id) {
+        id = 'dev-' + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('remote_device_id', id);
+      }
+      return id;
+    };
+
+    authBtn?.addEventListener('click', () => {
+      if (!socket.connected) {
+        showToast("Waiting for connection...", "warning");
+        return;
+      }
+      
+      const pin = pinInput.value;
+      if (pin.length === 4) {
+        socket.emit('register', { 
+          pin, 
+          deviceId: getDeviceId(),
+          userAgent: navigator.userAgent
+        });
+        authBtn.textContent = 'Verifying...';
+        authBtn.disabled = true;
+      } else {
+        showToast("Please enter a 4-digit PIN", "warning");
+      }
+    });
+
+    // Auto-re-register if session exists
+    const savedPin = sessionStorage.getItem('production_pin');
+    if (savedPin && authOverlay) {
+      socket.emit('register', { 
+        pin: savedPin, 
+        deviceId: getDeviceId(),
+        userAgent: navigator.userAgent
+      });
+    }
+
+    socket.on('registered', ({ success, error }) => {
+      const authOverlay = document.getElementById('remoteAuthOverlay');
+      const authBtn = document.getElementById('authSubmitBtn');
+      const pinInput = document.getElementById('remotePinInput');
+
+      if (success) {
+        const pin = pinInput?.value || sessionStorage.getItem('production_pin');
+        sessionStorage.setItem('production_pin', pin);
+        if (authOverlay) authOverlay.style.display = 'none';
+        if (mainShell) mainShell.style.display = 'block';
+        showToast("Production Deck Unlocked", "success");
+      } else {
+        showToast(error || "Invalid PIN", "error");
+        if (authBtn) {
+          authBtn.textContent = 'Unlock Deck';
+          authBtn.disabled = false;
+        }
+        sessionStorage.removeItem('production_pin');
+      }
+    });
+
+    socket.on('auth:error', (msg) => {
+      showToast(msg, "error");
+      if (authOverlay) authOverlay.style.display = 'flex';
+      if (mainShell) mainShell.style.display = 'none';
+      if (authBtn) {
+        authBtn.textContent = 'Unlock Deck';
+        authBtn.disabled = false;
+      }
+      sessionStorage.removeItem('production_pin');
+    });
+
+    socket.on('disconnect', () => {
+      if (authOverlay) authOverlay.style.display = 'flex';
+      // Proactively try to reconnect as soon as possible
+      setTimeout(() => socket.connect(), 500);
+    });
+
+    socket.on('connect', () => {
+      socket.emit('timer:identify', { 
+        deviceId: getDeviceId(), 
+        userAgent: navigator.userAgent 
+      });
+    });
+
+    socket.on('connect', () => {
+      if (authBtn) {
+        authBtn.textContent = 'Unlock Deck';
+        authBtn.disabled = false;
+      }
+    });
+  };
+
+  // Run auth init after DOM
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initAuth);
+  } else {
+    initAuth();
+  }
 
   window.timerAPI = {
-    start: (ms) => socket.emit('timer:start', ms),
+    isRemote: isRemote,
+    start: (data) => socket.emit('timer:start', data),
     pause: () => socket.emit('timer:pause'),
     reset: () => socket.emit('timer:reset'),
     resume: () => socket.emit('timer:resume'),
@@ -16,294 +135,948 @@ if (typeof window.timerAPI === 'undefined') {
     onUpdate: (cb) => socket.on('timer:update', cb),
     onFinished: (cb) => socket.on('timer:finished', cb),
     onTitle: (cb) => socket.on('timer:title', (data) => cb(data)),
+    savePreset: (p) => socket.emit('timer:savePreset', p),
+    deletePreset: (id) => socket.emit('timer:deletePreset', id),
+    onConfigUpdate: (cb) => {
+      socket.on('timer:configUpdate', (config) => {
+        if (typeof window.appConfig !== 'undefined') window.appConfig = config;
+        cb(config);
+      });
+    },
+    // Authority methods (Remote side is read-only for these)
+    stopTunnel: () => Promise.reject('Unauthorized'),
+    kickDevice: () => Promise.reject('Unauthorized'),
+    blockDevice: () => Promise.reject('Unauthorized')
   };
 
-  // Immediate state update when socket connects/reconnects
   socket.on('connect', async () => {
     const state = await window.timerAPI.getState();
-    if (typeof window.renderState === 'function') {
-      window.renderState(state);
-    }
+    if (typeof window.renderState === 'function') window.renderState(state);
   });
 
-  socket.on('timer:state', (state) => {
-    if (typeof window.renderState === 'function') {
-       window.renderState(state);
-    }
+  socket.on('timer:update', (state) => {
+    if (typeof window.renderState === 'function') window.renderState(state);
   });
-} else {
-  // We are running in Electron (Local Controller)
-  window.timerAPI.onServerInfo = (cb) => {
-    // This comes from ipcRenderer.send('server:info') in main.js
-    // But we need to use a listener since preload doesn't expose it yet
-    // Actually, let's just use the global scope check or update preload.js
-    // For now, I'll use a direct listener if possible, but preload is strict.
-    // I'll update preload.js in the next step to expose onServerInfo.
-  };
 }
 
-/* ---------------- AUDIO LOGIC ---------------- */
+/* ---------------- AUDIO & TTS LOGIC ---------------- */
 let isMuted = false;
 let activeAlarmContext = null;
+let lastMilestoneAnnounced = null; // To prevent multiple TTS calls for same second
+
+function showToast(text, type = 'success') {
+  let background = "linear-gradient(to right, #3b82f6, #2563eb)"; // info
+  if (type === 'success') background = "linear-gradient(to right, #10b981, #059669)";
+  if (type === 'warning') background = "linear-gradient(to right, #f59e0b, #d97706)";
+  if (type === 'error') background = "linear-gradient(to right, #ef4444, #dc2626)";
+
+  Toastify({
+    text: text,
+    duration: 3000,
+    gravity: "top", 
+    position: "right", 
+    stopOnFocus: true, 
+    style: {
+      background: background,
+      borderRadius: "12px",
+      fontSize: "13px",
+      fontWeight: "600",
+      boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.4)"
+    }
+  }).showToast();
+}
+
+window.copyToClipboard = (text) => {
+  if (!text || text.includes('...')) return;
+  navigator.clipboard.writeText(text).then(() => {
+    showToast("URL copied to clipboard!", "success");
+  }).catch(err => {
+    showToast("Failed to copy URL", "error");
+  });
+};
+
+function speak(text) {
+  const ttsEnabled = document.getElementById('ttsToggle')?.checked;
+  if (!ttsEnabled || isMuted) return;
+  
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 0.9;
+  utterance.pitch = 1.0;
+  window.speechSynthesis.speak(utterance);
+}
+
+function getNaturalSpeech(totalSeconds) {
+  if (totalSeconds >= 60) {
+    const mins = Math.floor(totalSeconds / 60);
+    const label = mins === 1 ? "1 minute" : `${mins} minutes`;
+    return `${label} remaining`;
+  }
+  return `${totalSeconds} seconds remaining`;
+}
+
+function parseHumanTime(str) {
+  str = str.trim().toLowerCase();
+  
+  // Format: 10:00 or 2:30
+  const clockMatch = str.match(/^(\d+):(\d+)$/);
+  if (clockMatch) {
+    return (parseInt(clockMatch[1]) * 60) + parseInt(clockMatch[2]);
+  }
+  
+  // Format: 2m 30s or 5m or 30s
+  let total = 0;
+  const mMatch = str.match(/(\d+)\s*m/);
+  const sMatch = str.match(/(\d+)\s*s/);
+  
+  if (mMatch) total += parseInt(mMatch[1]) * 60;
+  if (sMatch) total += parseInt(sMatch[1]);
+  
+  if (!mMatch && !sMatch) {
+    // Fallback to raw number (assumed seconds)
+    const raw = parseInt(str);
+    return isNaN(raw) ? null : raw;
+  }
+  
+  return total;
+}
+
+function formatMilestone(totalSecs) {
+  if (totalSecs >= 60) {
+    const mins = Math.floor(totalSecs / 60);
+    const remainingSecs = totalSecs % 60;
+    return remainingSecs > 0 ? `${mins}m ${remainingSecs}s` : `${mins}m`;
+  }
+  return `${totalSecs}s`;
+}
 
 function stopAlarm() {
   if (activeAlarmContext) {
-    try {
-      activeAlarmContext.close();
-    } catch (e) {}
+    try { activeAlarmContext.close(); } catch (e) {}
     activeAlarmContext = null;
   }
 }
 
 function playAlarm() {
   if (isMuted) return;
-  stopAlarm(); // Stop any existing alarm
+  stopAlarm();
+
+  const type = document.getElementById('alarmSoundSelect')?.value || 'pulse';
+  if (type === 'none') return;
 
   const AudioContext = window.AudioContext || window.webkitAudioContext;
   if (!AudioContext) return;
   
   activeAlarmContext = new AudioContext();
   const now = activeAlarmContext.currentTime;
-  
-  // Make it last 7 seconds
-  const totalDuration = 7; 
-  const pulseInterval = 0.5; // seconds per pulse
 
-  for (let i = 0; i < totalDuration; i += pulseInterval) {
-    const startTime = now + i;
-    const duration = pulseInterval * 0.8; // 80% duty cycle for the beep
-
+  if (type === 'pulse') {
+    const totalDuration = 7; 
+    const pulseInterval = 0.5;
+    for (let i = 0; i < totalDuration; i += pulseInterval) {
+      const startTime = now + i;
+      const duration = pulseInterval * 0.8;
+      const osc = activeAlarmContext.createOscillator();
+      const gain = activeAlarmContext.createGain();
+      osc.type = 'sine'; 
+      osc.frequency.setValueAtTime(880, startTime);
+      osc.frequency.exponentialRampToValueAtTime(440, startTime + duration);
+      gain.gain.setValueAtTime(0, startTime);
+      gain.gain.linearRampToValueAtTime(1.0, startTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+      osc.connect(gain);
+      gain.connect(activeAlarmContext.destination);
+      osc.start(startTime);
+      osc.stop(startTime + duration);
+    }
+  } else if (type === 'chime') {
+    const freqs = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+    freqs.forEach((f, i) => {
+      const osc = activeAlarmContext.createOscillator();
+      const gain = activeAlarmContext.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(f, now + (i * 0.15));
+      gain.gain.setValueAtTime(0, now + (i * 0.15));
+      gain.gain.linearRampToValueAtTime(0.6, now + (i * 0.15) + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + (i * 0.15) + 1.5);
+      osc.connect(gain); gain.connect(activeAlarmContext.destination);
+      osc.start(now + (i * 0.15)); osc.stop(now + 2);
+    });
+  } else if (type === 'gong') {
     const osc = activeAlarmContext.createOscillator();
     const gain = activeAlarmContext.createGain();
-
-    // Piercing square wave for high visibility, or high-freq sine
-    osc.type = 'sine'; 
-    osc.frequency.setValueAtTime(880, startTime); // A5
-    osc.frequency.exponentialRampToValueAtTime(440, startTime + duration); // Slide down for siren effect
-    
-    gain.gain.setValueAtTime(0, startTime);
-    gain.gain.linearRampToValueAtTime(1.0, startTime + 0.02); // MAX VOLUME
-    gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
-
-    osc.connect(gain);
-    gain.connect(activeAlarmContext.destination);
-
-    osc.start(startTime);
-    osc.stop(startTime + duration);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(110, now);
+    osc.frequency.exponentialRampToValueAtTime(55, now + 4);
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(1.0, now + 0.1);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 4);
+    osc.connect(gain); gain.connect(activeAlarmContext.destination);
+    osc.start(now); osc.stop(now + 4);
   }
 }
 
-/* ---------------- CORE TIMER LOGIC ---------------- */
-let currentState = {
-  remainingMs: 0,
-  isOvertime: false,
-  overtimeMs: 0,
-  isRunning: false,
-  isPaused: false,
-};
+/* ---------------- CORE TIMER & WORKFLOW LOGIC ---------------- */
+let currentState = { remainingMs: 0, isRunning: false, isPaused: false, isOvertime: false };
+let appConfig = { customPresets: [], playlists: [], settings: {} };
+let playlistQueue = [];
+let currentPlaylistIndex = -1;
 
 function formatTime(ms) {
-  const totalSeconds = Math.floor(ms / 1000);
+  const totalSeconds = Math.floor(Math.abs(ms) / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(
-    2,
-    "0"
-  )}`;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-// Make renderState global so the socket bridge can call it
-window.renderState = function({ remainingMs, isOvertime, overtimeMs, isRunning, isPaused }) {
-  currentState = { remainingMs, isOvertime, overtimeMs, isRunning, isPaused };
-
-  const timerLabel = document.getElementById("timerLabel");
-  const display = document.getElementById("display");
-  const statusPill = document.getElementById("statusPill");
-
-  if (!timerLabel || !display || !statusPill) return;
-
-  if (isOvertime) {
-    timerLabel.textContent = "Time Up!";
-    display.textContent = `-${formatTime(overtimeMs)}`;
-    display.classList.add("overtime");
-  } else {
-    timerLabel.textContent = "Time Remaining";
-    display.textContent = formatTime(remainingMs);
-    display.classList.remove("overtime");
+function renderCustomPresets() {
+  const container = document.getElementById('customPresetsContainer');
+  if (!container) return;
+  
+  if (appConfig.customPresets.length === 0) {
+    container.innerHTML = '<div style="font-size: 11px; color: var(--muted); width: 100%; text-align: center;">No custom presets yet.</div>';
+    return;
   }
 
-  // Update Status Pill & Buttons
-  const startBtn = document.getElementById("startBtn");
-  const pauseBtn = document.getElementById("pauseBtn");
+  container.innerHTML = appConfig.customPresets.map(p => `
+    <div class="preset-btn" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 120px;">
+      <span onclick="applyPreset(${p.minutes}, ${p.seconds}, '${p.title}', ${p.yellowSec || 'null'}, ${p.redSec || 'null'})" style="flex: 1;">${p.title || p.minutes + 'm'}</span>
+      <span onclick="deletePreset('${p.id}')" style="opacity: 0.5; font-size: 14px;">&times;</span>
+    </div>
+  `).join('');
+}
 
-  if (isRunning) {
-    statusPill.dataset.state = "running";
-    statusPill.textContent = "Running";
-    if (startBtn) startBtn.disabled = true;
-    if (pauseBtn) {
-      pauseBtn.disabled = false;
-      pauseBtn.textContent = "Pause";
+function renderPlaylist() {
+  const container = document.getElementById('playlistContainer');
+  if (!container) return;
+
+  if (playlistQueue.length === 0) {
+    container.innerHTML = '<div style="text-align: center; color: var(--muted); padding-top: 40px; font-size: 12px;">Playlist is empty.</div>';
+    return;
+  }
+
+  container.innerHTML = playlistQueue.map((item, index) => `
+    <div class="playlist-item ${index === currentPlaylistIndex ? 'active' : ''}" style="${index === currentPlaylistIndex ? 'border-color: var(--accent); background: var(--accent-soft);' : ''}">
+      <div class="info">
+        <div class="title">${item.title || 'Untitled Session'}</div>
+        <div class="time">${item.minutes}m ${item.seconds}s</div>
+      </div>
+      <div style="display: flex; gap: 8px;">
+         <span onclick="startPlaylistAt(${index})" style="cursor: pointer; color: var(--accent);">▶</span>
+         <span onclick="removeFromPlaylist(${index})" style="cursor: pointer; opacity: 0.5;">&times;</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+window.applyPreset = (mins, secs, title, ySec = null, rSec = null) => {
+  document.getElementById('minutes').value = mins;
+  document.getElementById('seconds').value = secs;
+  document.getElementById('customTitle').value = title || "";
+  
+  const yEl = document.getElementById('overrideYellow');
+  const rEl = document.getElementById('overrideRed');
+  if (yEl) yEl.value = ySec || "";
+  if (rEl) rEl.value = rSec || "";
+
+  window.timerAPI.setTitle(title || "");
+  // Switch to Timer tab
+  document.querySelector('[data-tab="timer"]').click();
+};
+
+window.deletePreset = (id) => {
+  window.timerAPI.deletePreset(id);
+  showToast("Preset deleted", "warning");
+};
+
+window.startPlaylistAt = (index) => {
+  currentPlaylistIndex = index;
+  const item = playlistQueue[index];
+  if (item) {
+    document.getElementById('minutes').value = item.minutes;
+    document.getElementById('seconds').value = item.seconds;
+    document.getElementById('customTitle').value = item.title;
+    
+    const yEl = document.getElementById('overrideYellow');
+    const rEl = document.getElementById('overrideRed');
+    if (yEl) yEl.value = item.yellowSec || "";
+    if (rEl) rEl.value = item.redSec || "";
+    
+    let wrapUp = null;
+    if (item.yellowSec || item.redSec) {
+      wrapUp = {
+        yellowMs: (item.yellowSec || 60) * 1000,
+        redMs: (item.redSec || 30) * 1000,
+        flashOnRed: appConfig.settings.wrap_up?.flashOnRed ?? true,
+        flashOnOvertime: appConfig.settings.wrap_up?.flashOnOvertime ?? true,
+        soundOnYellow: appConfig.settings.wrap_up?.soundOnYellow ?? false,
+        soundOnRed: appConfig.settings.wrap_up?.soundOnRed ?? true
+      };
     }
-  } else if (isPaused) {
-    statusPill.dataset.state = "paused";
-    statusPill.textContent = "Paused";
-    if (startBtn) startBtn.disabled = false;
-    if (pauseBtn) {
-      pauseBtn.disabled = false;
-      pauseBtn.textContent = "Resume";
-    }
-    stopAlarm(); // Stop when paused
-  } else {
-    statusPill.dataset.state = "paused";
-    statusPill.textContent = "Idle";
-    if (startBtn) startBtn.disabled = false;
-    if (pauseBtn) {
-      pauseBtn.disabled = true;
-      pauseBtn.textContent = "Pause";
-    }
-    stopAlarm(); // Stop when idle
+
+    window.timerAPI.setTitle(item.title);
+    window.timerAPI.start({ ms: (item.minutes * 60 + item.seconds) * 1000, wrapUp });
+    renderPlaylist();
+    // Speak title if enabled
+    if (appConfig.settings.readPlaylistTitle) speak(item.title);
+    // Switch to Timer tab
+    document.querySelector('[data-tab="timer"]').click();
   }
 };
 
-window.addEventListener("DOMContentLoaded", async () => {
-  const minutesInput = document.getElementById("minutes");
-  const secondsInput = document.getElementById("seconds");
-  const startBtn = document.getElementById("startBtn");
-  const pauseBtn = document.getElementById("pauseBtn");
-  const resetBtn = document.getElementById("resetBtn");
-  const customTitleInput = document.getElementById("customTitle");
-  const presetButtons = document.querySelectorAll(".preset-btn");
+window.removeFromPlaylist = (index) => {
+  playlistQueue.splice(index, 1);
+  if (currentPlaylistIndex === index) currentPlaylistIndex = -1;
+  else if (currentPlaylistIndex > index) currentPlaylistIndex--;
+  renderPlaylist();
+};
 
-  // Initial State Fetch
-  const state = await window.timerAPI.getState();
-  window.renderState({
-    remainingMs: state.remainingMs || 0,
-    isOvertime: state.isOvertime || false,
-    overtimeMs: state.overtimeMs || 0,
-    isRunning: state.isRunning || false,
-    isPaused: state.isPaused || false,
-  });
+window.renderState = function(state) {
+  const { remainingMs, isRunning, isPaused, isOvertime, overtimeMs, config } = state;
+  currentState = state;
+  
+  if (config) {
+    appConfig = config;
+    renderCustomPresets();
+    // Update settings UI if they changed
+    const autoAdvance = document.getElementById('autoAdvanceToggle');
+    if (autoAdvance) autoAdvance.checked = config.settings.autoAdvance;
+    const tts = document.getElementById('ttsToggle');
+    if (tts) tts.checked = config.settings.ttsEnabled;
+    const titleSpeak = document.getElementById('readPlaylistTitleToggle');
+    if (titleSpeak) titleSpeak.checked = config.settings.readPlaylistTitle;
+    const sound = document.getElementById('alarmSoundSelect');
+    if (sound) sound.value = config.settings.alarmSound;
+    const miles = document.getElementById('milestonesInput');
+    if (miles && config.settings.milestones) {
+      // Format milestones nicely for the human user (e.g. 300 -> 5m)
+      miles.value = config.settings.milestones.map(formatMilestone).join(', ');
+    }
+    
+    // Appearance Sync
+    if (config.settings.appearance) {
+      const app = config.settings.appearance;
+      const syncVal = (id, val) => {
+        const el = document.getElementById(id);
+        if (el && document.activeElement !== el) el.value = val;
+      };
+      
+      syncVal('appearanceTimerSize', app.timerSize);
+      syncVal('appearanceTimerColor', app.timerColor);
+      syncVal('appearanceTimerColorHex', app.timerColor);
+      syncVal('appearanceTimerFont', app.timerFont);
+      
+      syncVal('appearanceTitleSize', app.titleSize);
+      syncVal('appearanceTitleColor', app.titleColor);
+      
+      syncVal('appearanceNotesSize', app.notesSize);
+      syncVal('appearanceNotesColor', app.notesColor);
+      
+      syncVal('appearanceBarColor', app.barColor);
+      syncVal('appearanceBarHeight', app.barHeight);
+    }
+    
+    // Focus Mode Sync
+    if (config.settings.focusMode) {
+      const focus = config.settings.focusMode;
+      const enableEl = document.getElementById('focusModeEnabled');
+      const itemEl = document.getElementById('focusModeItem');
+      if (enableEl) enableEl.checked = focus.enabled;
+      if (itemEl) itemEl.value = focus.focusedItem;
+    }
+    
+    // Visibility Sync
+    if (config.settings.visibility) {
+      const vis = config.settings.visibility;
+      const syncCheck = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.checked = val;
+      };
+      syncCheck('showTimerToggle', vis.showTimer);
+      syncCheck('showBarToggle', vis.showBar);
+      syncCheck('showTitleToggle', vis.showTitle);
+      syncCheck('showNotesToggle', vis.showNotes);
+    }
+    
+    // Sync stage notes across devices
+    const notesEl = document.getElementById('stageNotes');
+    if (notesEl && state.customNotes !== undefined) {
+      if (document.activeElement !== notesEl) {
+        notesEl.value = state.customNotes;
+      }
+    }
 
-  if (state.customTitle && customTitleInput) {
-    customTitleInput.value = state.customTitle;
+    // Connectivity UI Updates (Local + Global)
+    updateConnectivityUI(config);
+
+    // Wrap-up Sync
+    if (config.settings.wrapUp) {
+      const wu = config.settings.wrapUp;
+      const wuYellow = document.getElementById('wrapUpYellow');
+      const wuRed = document.getElementById('wrapUpRed');
+      const wuFlashRed = document.getElementById('wrapUpFlashRed');
+      const wuFlashOvertime = document.getElementById('wrapUpFlashOvertime');
+      const wuSound = document.getElementById('wrapUpSoundEnabled');
+      
+      if (wuYellow) wuYellow.value = wu.yellowMs / 1000;
+      if (wuRed) wuRed.value = wu.redMs / 1000;
+      if (wuFlashRed) wuFlashRed.checked = wu.flashOnRed;
+      if (wuFlashOvertime) wuFlashOvertime.checked = wu.flashOnOvertime;
+      if (wuSound) wuSound.checked = wu.soundOnYellow;
+    }
   }
 
-  // Listen for updates
-  window.timerAPI.onUpdate((data) => window.renderState(data));
-  window.timerAPI.onTitle(({ title }) => {
-    if (customTitleInput && document.activeElement !== customTitleInput) {
-       customTitleInput.value = title;
+  const display = document.getElementById("display");
+  const label = document.getElementById("timerLabel");
+  const statusPill = document.getElementById("statusPill");
+
+  if (isOvertime) {
+    label.style.display = "none";
+    display.textContent = `-${formatTime(overtimeMs)}`;
+    display.style.color = "var(--danger)";
+  } else {
+    label.style.display = "block";
+    label.textContent = currentState.customTitle || "Time Remaining";
+    display.textContent = formatTime(remainingMs);
+    display.style.color = "var(--text)";
+  }
+
+  // Milestone TTS
+  if (isRunning && !isOvertime) {
+    const totalSecs = Math.floor(remainingMs / 1000);
+    const milestones = appConfig.settings.milestones || [];
+    
+    for (const ms of milestones) {
+      if (totalSecs === ms && lastMilestoneAnnounced !== ms) {
+        speak(getNaturalSpeech(ms));
+        lastMilestoneAnnounced = ms;
+        break; 
+      }
+    }
+  } else {
+    lastMilestoneAnnounced = null;
+  }
+
+  // Button States
+  const startBtn = document.getElementById("startBtn");
+  const pauseBtn = document.getElementById("pauseBtn");
+  // startBtn is now always clickable to allow overriding the current time
+  if (startBtn) startBtn.disabled = false;
+  if (pauseBtn) {
+    pauseBtn.disabled = !isRunning && !isPaused;
+    pauseBtn.textContent = isPaused ? "Resume" : "Pause";
+  }
+  
+  if (isRunning) {
+    statusPill.textContent = "Running";
+    statusPill.dataset.state = "running";
+  } else if (isPaused) {
+    statusPill.textContent = "Paused";
+    statusPill.dataset.state = "paused";
+    stopAlarm();
+  } else {
+    statusPill.textContent = "Idle";
+    statusPill.dataset.state = "paused";
+    stopAlarm();
+  }
+};
+
+function updateConnectivityUI(config) {
+  if (!config) return;
+  const localUrl = config.localUrl || `http://${window.location.hostname}:8321`;
+  const globalUrl = config.tunnelUrl;
+  
+  const localDisplay = document.getElementById('localUrlDisplay');
+  const globalDisplay = document.getElementById('globalUrlDisplay');
+  const pinDisplay = document.getElementById('pinDisplay');
+  const copyGlobalBtn = document.getElementById('copyGlobalBtn');
+  const startBtn = document.getElementById('startTunnelBtn');
+  
+  // Always show local address and security PIN
+  if (localDisplay) localDisplay.textContent = localUrl;
+  if (pinDisplay) pinDisplay.textContent = config.settings?.securityPin || "----";
+  
+  if (globalUrl) {
+    if (globalDisplay) {
+      globalDisplay.textContent = globalUrl;
+      globalDisplay.style.color = "#f38020";
+      globalDisplay.style.fontWeight = "800";
+    }
+    if (copyGlobalBtn) copyGlobalBtn.style.display = "block";
+    
+    const startBtn = document.getElementById('startTunnelBtn');
+    const stopBtn = document.getElementById('stopTunnelBtn');
+    if (startBtn) startBtn.style.display = 'none';
+    if (stopBtn) stopBtn.style.display = 'block';
+  } else {
+    // Tunnel inactive
+    if (globalDisplay) {
+      globalDisplay.textContent = "Configure Cloud Tunnel...";
+      globalDisplay.style.color = "var(--muted)";
+      globalDisplay.style.fontWeight = "400";
+    }
+    if (copyGlobalBtn) copyGlobalBtn.style.display = "none";
+    
+    const startBtn = document.getElementById('startTunnelBtn');
+    const stopBtn = document.getElementById('stopTunnelBtn');
+    if (startBtn) {
+      startBtn.style.display = 'block';
+      startBtn.textContent = 'Go Global (Public Cloud)';
+      startBtn.style.background = 'var(--accent)'; 
+      startBtn.style.pointerEvents = 'auto';
+      startBtn.disabled = false;
+    }
+    if (stopBtn) stopBtn.style.display = 'none';
+  }
+  
+  // Smart QR: Points to the best available route
+  updateQRCode(globalUrl || localUrl);
+}
+
+function updateQRCode(url) {
+  const qrEl = document.getElementById('qrcode');
+  if (!qrEl || typeof QRCode === 'undefined') return;
+  
+  qrEl.innerHTML = ''; // Clear old one
+  new QRCode(qrEl, {
+    text: url,
+    width: 140,
+    height: 140,
+    colorDark: "#000000",
+    colorLight: "#ffffff",
+    correctLevel: QRCode.CorrectLevel.H
+  });
+}
+
+/* ---------------- EVENTS ---------------- */
+window.addEventListener("DOMContentLoaded", async () => {
+  // Tabs
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn, .tab-content').forEach(el => el.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(`${btn.dataset.tab}Tab`).classList.add('active');
+    });
+  });
+
+  // Setup
+  const state = await window.timerAPI.getState();
+  window.renderState(state);
+
+  window.timerAPI.onUpdate(window.renderState);
+  window.timerAPI.onFinished(() => {
+    playAlarm();
+    speak("Time is up");
+    
+    // Auto Advance Logic
+    const autoAdvance = document.getElementById('autoAdvanceToggle')?.checked;
+    if (autoAdvance && currentPlaylistIndex < playlistQueue.length - 1) {
+      showToast("Auto-advancing to next item in 10s...", "info");
+      setTimeout(() => window.startPlaylistAt(currentPlaylistIndex + 1), 10000);
     }
   });
 
-  // Listen for timer finish to play alarm
-  window.timerAPI.onFinished(() => {
-    playAlarm();
+  window.timerAPI.onConfigUpdate((config) => {
+    appConfig = config;
+    renderCustomPresets();
+    updateConnectivityUI(config);
+
+    // Re-render state to ensure all UI settings (toggles, milestones) sync
+    window.renderState({ ...currentState, config });
+    
+    // Refresh device list to reflect block/unblock changes
+    if (window.timerAPI.getDevices) {
+      window.timerAPI.getDevices().then(window.renderDevices);
+    }
   });
 
-  // Handle Server Info (only works in Electron)
-  if (window.timerAPI.onServerInfo) {
-    window.timerAPI.onServerInfo(({ url }) => {
-       const infoRow = document.getElementById("remoteControlInfo");
-       const urlSpan = document.getElementById("remoteUrl");
-       if (infoRow && urlSpan) {
-         infoRow.style.display = "flex";
-         urlSpan.textContent = url;
-       }
-    });
-  }
-
-  // Input listeners
-  presetButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const mins = Number(btn.dataset.minutes || "0");
-      minutesInput.value = String(mins);
-      secondsInput.value = "0";
-    });
+  // Handle Tunneling
+  document.getElementById('startTunnelBtn')?.addEventListener('click', async (e) => {
+    try {
+      e.target.disabled = true;
+      e.target.textContent = 'Migrating to Cloud...';
+      showToast("Requesting Public Global Address...", "info");
+      
+      const url = await window.timerAPI.startTunnel();
+      showToast("Production Deck is now GLOBAL!", "success");
+    } catch (err) {
+      console.error('Tunnel Error:', err);
+      showToast("Tunnel failed. Check internet/firewall.", "error");
+      e.target.disabled = false;
+      e.target.textContent = 'Retry Global Tunnel';
+    }
   });
 
-  startBtn.addEventListener("click", () => {
-    const mins = Number(minutesInput.value) || 0;
-    const secs = Number(secondsInput.value) || 0;
-    const totalSeconds = mins * 60 + secs;
+  document.getElementById('stopTunnelBtn')?.addEventListener('click', async () => {
+    try {
+      const success = await window.timerAPI.stopTunnel();
+      if (success) {
+        showToast("Global Access Disabled", "warning");
+      }
+    } catch (err) {
+      showToast("Failed to stop tunnel", "error");
+    }
+  });
 
-    if (totalSeconds <= 0) {
-      secondsInput.focus();
+  // Handle PIN Refresh
+  document.getElementById('refreshPinBtn')?.addEventListener('click', async () => {
+    if (confirm("Generating a new security code will instantly disconnect ALL remote devices. Continue?")) {
+      try {
+        await window.timerAPI.refreshPin();
+        showToast("Session Refreshed with New PIN", "success");
+      } catch (err) {
+        showToast("Failed to refresh PIN", "error");
+      }
+    }
+  });
+
+  window.renderDevices = (devices) => {
+    const tbody = document.getElementById('devicesTableBody');
+    const badge = document.getElementById('deviceCountBadge');
+    if (!tbody || !badge) return;
+
+    badge.textContent = `${devices.length} Active`;
+
+    if (devices.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="3" style="padding: 20px; text-align: center; color: var(--muted);">No remote devices connected.</td></tr>';
       return;
     }
 
-    const ms = totalSeconds * 1000;
-    window.timerAPI.start(ms);
+    tbody.innerHTML = devices.map(dev => {
+      const isAuth = dev.isAuthenticated;
+      const isBlocked = appConfig.settings.blockedDevices?.includes(dev.deviceId);
+      
+      // Extract browser name from user agent
+      const ua = dev.userAgent;
+      let deviceName = 'Remote Device';
+      if (ua.includes('iPhone')) deviceName = 'iPhone';
+      else if (ua.includes('Android')) deviceName = 'Android Tablet';
+      else if (ua.includes('Macintosh')) deviceName = 'Mac Desktop';
+      else if (ua.includes('Windows')) deviceName = 'PC Desktop';
+
+      return `
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.02); opacity: ${isBlocked ? '0.6' : '1'};">
+          <td style="padding: 10px;">
+            <div style="font-weight: 600; color: ${isBlocked ? '#ef4444' : 'inherit'};">${deviceName} ${isBlocked ? '(Blocked)' : ''}</div>
+            <div style="font-size: 9px; opacity: 0.5;">${dev.ip.replace('::ffff:', '')} • ${dev.deviceId}</div>
+          </td>
+          <td style="padding: 10px;">
+            <span style="color: ${isBlocked ? '#ef4444' : (isAuth ? '#22c55e' : '#eab308')};">
+              ${isBlocked ? '● Banned' : (isAuth ? '● Authenticated' : '○ Connected')}
+            </span>
+          </td>
+          <td style="padding: 10px; text-align: right; display: flex; gap: 4px; justify-content: flex-end;">
+            ${isBlocked ? `
+              <button onclick="unblockDevice('${dev.deviceId}')" style="background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.2); color: #22c55e; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-weight: 600;">Unblock</button>
+            ` : `
+              <button onclick="blockDevice('${dev.id}', '${dev.deviceId}')" style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); color: #ef4444; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-weight: 600;">Block</button>
+            `}
+          </td>
+        </tr>
+      `;
+    }).join('');
+  };
+
+  // DEVICE MONITORING (Host Only)
+  if (window.timerAPI.onDevicesUpdate) {
+    window.timerAPI.onDevicesUpdate(window.renderDevices);
+    
+    // Initial fetch for the monitor
+    if (window.timerAPI.getDevices) {
+      window.timerAPI.getDevices().then(window.renderDevices);
+    }
+  }
+
+  window.unblockDevice = (deviceId) => {
+    window.timerAPI.unblockDevice(deviceId);
+    showToast("Device pardoned", "success");
+    // Force a UI refresh because unblocking happens locally first
+    if (appConfig.settings.blockedDevices) {
+      appConfig.settings.blockedDevices = appConfig.settings.blockedDevices.filter(id => id !== deviceId);
+      window.renderDevices(window.lastKnownDevices || []);
+    }
+  };
+
+  window.blockDevice = (socketId, deviceId) => {
+    if (confirm("Permanently block this device ID? They will be instantly disconnected.")) {
+      window.timerAPI.blockDevice(socketId, deviceId);
+      showToast("Device Blacklisted", "error");
+    }
+  };
+
+  // Standard Presets Listener
+  document.querySelectorAll('.preset-btn[data-minutes]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mins = btn.getAttribute('data-minutes');
+      document.getElementById('minutes').value = mins;
+      document.getElementById('seconds').value = 0;
+      // UX Improvement: Switch back to Timer tab automatically
+      document.querySelector('[data-tab="timer"]').click();
+    });
   });
 
-  pauseBtn.addEventListener("click", () => {
-    stopAlarm(); // Stop alarm immediately on click
+  // Live Title Sync
+  const titleInput = document.getElementById('customTitle');
+  if (titleInput) {
+    titleInput.addEventListener('input', (e) => {
+      window.timerAPI.setTitle(e.target.value);
+    });
+  }
+
+  // Controls
+  document.getElementById('startBtn').addEventListener('click', () => {
+    const mins = parseInt(document.getElementById('minutes').value) || 0;
+    const secs = parseInt(document.getElementById('seconds').value) || 0;
+    
+    const yEl = document.getElementById('overrideYellow');
+    const rEl = document.getElementById('overrideRed');
+    const yVal = yEl ? parseInt(yEl.value) : NaN;
+    const rVal = rEl ? parseInt(rEl.value) : NaN;
+    
+    let wrapUp = null;
+    if (!isNaN(yVal) || !isNaN(rVal)) {
+      wrapUp = {
+        yellowMs: (yVal || 60) * 1000,
+        redMs: (rVal || 30) * 1000,
+        flashOnRed: appConfig.settings.wrapUp.flashOnRed,
+        flashOnOvertime: appConfig.settings.wrapUp.flashOnOvertime,
+        soundOnYellow: appConfig.settings.wrapUp.soundOnYellow,
+        soundOnRed: appConfig.settings.wrapUp.soundOnRed
+      };
+    }
+
+    const isRestart = currentState.isRunning || currentState.isPaused;
+    const title = document.getElementById('customTitle').value || "";
+    window.timerAPI.setTitle(title);
+    window.timerAPI.start({ ms: (mins * 60 + secs) * 1000, wrapUp });
+    showToast(isRestart ? "Timer Restarted" : "Timer Started", isRestart ? "info" : "success");
+  });
+
+  document.getElementById('pauseBtn').addEventListener('click', () => {
     if (currentState.isRunning) {
       window.timerAPI.pause();
-    } else if (currentState.isPaused) {
+      showToast("Timer Paused", "warning");
+    } else {
       window.timerAPI.resume();
+      showToast("Timer Resumed");
     }
   });
 
-  resetBtn.addEventListener("click", () => {
-    stopAlarm(); // Stop alarm immediately on reset
+  document.getElementById('resetBtn').addEventListener('click', () => {
     window.timerAPI.reset();
+    currentPlaylistIndex = -1;
+    renderPlaylist();
+    showToast("Timer Reset", "info");
   });
 
-  customTitleInput.addEventListener("input", () => {
-    window.timerAPI.setTitle(customTitleInput.value.trim());
+  document.getElementById('savePresetBtn').addEventListener('click', () => {
+    const mins = parseInt(document.getElementById('minutes').value) || 0;
+    const secs = parseInt(document.getElementById('seconds').value) || 0;
+    const yEl = document.getElementById('overrideYellow');
+    const rEl = document.getElementById('overrideRed');
+    const yVal = yEl ? parseInt(yEl.value) : NaN;
+    const rVal = rEl ? parseInt(rEl.value) : NaN;
+    const title = document.getElementById('customTitle').value || `${mins}m Preset`;
+
+    const preset = { id: Date.now().toString(), minutes: mins, seconds: secs, title };
+    if (!isNaN(yVal)) preset.yellowSec = yVal;
+    if (!isNaN(rVal)) preset.redSec = rVal;
+
+    window.timerAPI.savePreset(preset);
+    showToast(`Preset "${title}" Saved`);
   });
 
-  const muteBtn = document.getElementById("muteBtn");
-  if (muteBtn) {
-    muteBtn.addEventListener("click", () => {
-      isMuted = !isMuted;
-      muteBtn.textContent = isMuted ? "🔇 Muted" : "🔊 Sound On";
-      muteBtn.style.color = isMuted ? "#ef4444" : "#9ca3af";
-    });
-  }
+  document.getElementById('addToPlaylistBtn').addEventListener('click', () => {
+    const mins = parseInt(document.getElementById('minutes').value) || 0;
+    const secs = parseInt(document.getElementById('seconds').value) || 0;
+    const yEl = document.getElementById('overrideYellow');
+    const rEl = document.getElementById('overrideRed');
+    const yVal = yEl ? parseInt(yEl.value) : NaN;
+    const rVal = rEl ? parseInt(rEl.value) : NaN;
+    const title = document.getElementById('customTitle').value || "Unnamed Session";
 
-  const testSoundBtn = document.getElementById("testSoundBtn");
-  if (testSoundBtn) {
-    testSoundBtn.addEventListener("click", () => {
-      playAlarm();
-    });
-  }
+    const item = { minutes: mins, seconds: secs, title };
+    if (!isNaN(yVal)) item.yellowSec = yVal;
+    if (!isNaN(rVal)) item.redSec = rVal;
 
-  const copyUrlBtn = document.getElementById("copyUrlBtn");
-  const remoteUrlSpan = document.getElementById("remoteUrl");
-  const copyFeedback = document.getElementById("copyFeedback");
-  let feedbackTimeout = null;
+    playlistQueue.push(item);
+    renderPlaylist();
+    showToast(`Item "${title}" added to Playlist`);
+  });
 
-  if (copyUrlBtn && remoteUrlSpan && copyFeedback) {
-    copyUrlBtn.addEventListener("click", async () => {
-      const url = remoteUrlSpan.textContent;
-      if (!url) return;
+  document.getElementById('nextBtn').addEventListener('click', () => {
+    if (currentPlaylistIndex < playlistQueue.length - 1) {
+      window.startPlaylistAt(currentPlaylistIndex + 1);
+    }
+  });
 
-      try {
-        await navigator.clipboard.writeText(url);
-        
-        // Handle feedback animation
-        clearTimeout(feedbackTimeout);
-        copyFeedback.style.opacity = "1";
-        
-        feedbackTimeout = setTimeout(() => {
-          copyFeedback.style.opacity = "0";
-        }, 2000);
-      } catch (err) {
-        console.error("Failed to copy URL: ", err);
+  document.getElementById('prevBtn').addEventListener('click', () => {
+    if (currentPlaylistIndex > 0) {
+      window.startPlaylistAt(currentPlaylistIndex - 1);
+    }
+  });
+
+  document.getElementById('clearPlaylistBtn').addEventListener('click', () => {
+    playlistQueue = [];
+    currentPlaylistIndex = -1;
+    renderPlaylist();
+  });
+
+  document.getElementById('testSoundBtn').addEventListener('click', playAlarm);
+  
+  document.getElementById('saveSettingsBtn').addEventListener('click', () => {
+    const autoAdvance = document.getElementById('autoAdvanceToggle').checked;
+    const ttsEnabled = document.getElementById('ttsToggle').checked;
+    const readPlaylistTitle = document.getElementById('readPlaylistTitleToggle').checked;
+    const alarmSound = document.getElementById('alarmSoundSelect').value;
+    const milestoneStr = document.getElementById('milestonesInput').value;
+    
+    const visibility = {
+      showTimer: document.getElementById('showTimerToggle').checked,
+      showBar: document.getElementById('showBarToggle').checked,
+      showTitle: document.getElementById('showTitleToggle').checked,
+      showNotes: document.getElementById('showNotesToggle').checked,
+    };
+    
+    // Use the robust human-time parser
+    const milestones = milestoneStr.split(',')
+      .map(s => parseHumanTime(s.trim()))
+      .filter(n => n !== null && !isNaN(n))
+      .sort((a, b) => b - a); // Sort longest to shortest
+      
+    const wrapUp = {
+      yellowMs: (parseInt(document.getElementById('wrapUpYellow').value) || 60) * 1000,
+      redMs: (parseInt(document.getElementById('wrapUpRed').value) || 30) * 1000,
+      flashOnRed: document.getElementById('wrapUpFlashRed').checked,
+      flashOnOvertime: document.getElementById('wrapUpFlashOvertime').checked,
+      soundOnYellow: document.getElementById('wrapUpSoundEnabled').checked,
+      soundOnRed: document.getElementById('wrapUpSoundEnabled').checked
+    };
+
+    const settings = { autoAdvance, ttsEnabled, readPlaylistTitle, alarmSound, milestones, visibility, wrapUp };
+    window.timerAPI.saveSettings(settings);
+    showToast("Production Settings Saved & Synced", "success");
+  });
+
+  // Appearance Save
+  document.getElementById('saveAppearanceBtn')?.addEventListener('click', () => {
+    const appearance = {
+      timerSize: document.getElementById('appearanceTimerSize').value,
+      timerColor: document.getElementById('appearanceTimerColor').value,
+      timerFont: document.getElementById('appearanceTimerFont').value,
+      titleSize: document.getElementById('appearanceTitleSize').value,
+      titleColor: document.getElementById('appearanceTitleColor').value,
+      notesSize: document.getElementById('appearanceNotesSize').value,
+      notesColor: document.getElementById('appearanceNotesColor').value,
+      barColor: document.getElementById('appearanceBarColor').value,
+      barHeight: document.getElementById('appearanceBarHeight').value,
+    };
+
+    const focusMode = {
+      enabled: document.getElementById('focusModeEnabled').checked,
+      focusedItem: document.getElementById('focusModeItem').value
+    };
+    
+    window.timerAPI.saveSettings({ appearance, focusMode });
+    showToast("Projector Theme Updated", "success");
+  });
+
+  // Reset Appearance logic
+  document.getElementById('resetAppearanceBtn')?.addEventListener('click', () => {
+    const defaults = {
+      appearance: {
+        timerSize: "24vw",
+        timerColor: "#ffffff",
+        timerFont: "ui-monospace",
+        titleSize: "6vh",
+        titleColor: "rgba(255, 255, 255, 0.8)",
+        titleFont: "system-ui",
+        notesSize: "4.5vh",
+        notesColor: "#ffffff",
+        notesFont: "system-ui",
+        barColor: "#3b82f6",
+        barHeight: "12px"
+      },
+      focusMode: {
+        enabled: false,
+        focusedItem: "timer"
       }
-    });
+    };
+    window.timerAPI.saveSettings(defaults);
+    showToast("Theme Reset to Factory Defaults", "info");
+  });
 
-    // Add visual hover feedback
-    copyUrlBtn.addEventListener("mouseenter", () => {
-       remoteUrlSpan.style.borderColor = "var(--accent)";
-       remoteUrlSpan.style.background = "rgba(59, 130, 246, 0.25)";
+  // Sync Color Picker and Hex for Timer
+  const timerColor = document.getElementById('appearanceTimerColor');
+  const timerHex = document.getElementById('appearanceTimerColorHex');
+  timerColor?.addEventListener('input', (e) => { timerHex.value = e.target.value; });
+  timerHex?.addEventListener('input', (e) => { timerColor.value = e.target.value; });
+
+  document.getElementById('muteBtn').addEventListener('click', (e) => {
+    isMuted = !isMuted;
+    const label = isMuted ? "🔇 Audio Off" : "🔊 Audio On";
+    e.target.textContent = label;
+    e.target.classList.toggle('btn-secondary', isMuted);
+    e.target.classList.toggle('btn-primary', !isMuted);
+    showToast(label, isMuted ? 'warning' : 'success');
+  });
+
+  // Stage Notes Listener
+  const stageNotes = document.getElementById('stageNotes');
+  if (stageNotes) {
+    stageNotes.addEventListener('input', (e) => {
+      window.timerAPI.setNotes(e.target.value);
     });
-    copyUrlBtn.addEventListener("mouseleave", () => {
-       remoteUrlSpan.style.borderColor = "rgba(59, 130, 246, 0.2)";
-       remoteUrlSpan.style.background = "var(--accent-soft)";
+  }
+
+  // Copy Links Functionality
+  window.copyToClipboard = async (elementId) => {
+    const input = document.getElementById(elementId);
+    if (!input) return;
+    
+    try {
+      await navigator.clipboard.writeText(input.value);
+      showToast("Link Copied to Clipboard", "success");
+      
+      const btn = input.nextElementSibling;
+      if (btn) {
+        const originalText = btn.textContent;
+        btn.textContent = "Copied!";
+        btn.classList.replace('btn-secondary', 'btn-primary');
+        setTimeout(() => {
+          btn.textContent = originalText;
+          btn.classList.replace('btn-primary', 'btn-secondary');
+        }, 2000);
+      }
+    } catch (err) {
+      showToast("Failed to copy link", "error");
+    }
+  };
+
+  // Copy URL logic (Existing Header)
+  const copyBtn = document.getElementById('copyUrlBtn');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', async () => {
+      const url = document.getElementById('remoteUrl').textContent;
+      await navigator.clipboard.writeText(url);
+      showToast("Remote URL Copied to Clipboard");
+      const feedback = document.getElementById('copyFeedback');
+      feedback.style.opacity = '1';
+      setTimeout(() => feedback.style.opacity = '0', 2000);
+    });
+  }
+
+  // Preload Server Info
+  if (window.timerAPI.onServerInfo) {
+    window.timerAPI.onServerInfo(({ url }) => {
+      // Update Main Header
+      document.getElementById('remoteControlInfo').style.display = 'flex';
+      document.getElementById('remoteUrl').textContent = url;
+
+      // Update Output Tab Inputs
+      const ctrlInput = document.getElementById('linkController');
+      const projInput = document.getElementById('linkProjector');
+      if (ctrlInput) ctrlInput.value = url;
+      if (projInput) projInput.value = `${url}/projector`;
     });
   }
 });
