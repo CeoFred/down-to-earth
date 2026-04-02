@@ -24,4 +24,6 @@ contextBridge.exposeInMainWorld('timerAPI', {
   onDevicesUpdate: (cb) => ipcRenderer.on('timer:devicesUpdate', (_e, data) => cb(data)),
   getDevices: () => ipcRenderer.invoke('timer:getDevices'),
   refreshPin: () => ipcRenderer.invoke('timer:refreshPin'),
+  flash: () => ipcRenderer.invoke('timer:flash'),
+  onFlash: (cb) => ipcRenderer.on('timer:flash', () => cb())
 });

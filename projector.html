@@ -120,9 +120,7 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        flex: 1; 
         width: 100%;
-        min-height: 0; /* Ensure the center stack can shrink to fit */
       }
 
       /* Urgency Pulse (< 60s) */
@@ -209,11 +207,50 @@
         animation: flash-indefinite 1s infinite alternate ease-in-out;
       }
 
+      /* ⚡️ Flash & Shake Signaling */
+      @keyframes energetic-shake {
+        0%, 100% { transform: translate(0, 0); }
+        25% { transform: translate(-4px, -2px); }
+        75% { transform: translate(4px, 2px); }
+      }
+
+      body.flash-blast {
+        background: rgba(255, 255, 255, 0.35) !important;
+        transition: background 0.15s ease;
+      }
+
+      .flash-active {
+        animation: energetic-shake 0.2s infinite !important;
+        filter: brightness(1.6) drop-shadow(0 0 20px rgba(255,255,255,0.6)) !important;
+        color: #fff !important;
+        text-shadow: 0 0 30px rgba(255, 255, 255, 0.8) !important;
+        z-index: 9999 !important;
+      }
+
+      .notes-flash {
+        animation: energetic-shake 0.25s infinite !important;
+        background: rgba(255, 255, 255, 0.15) !important;
+        box-shadow: 0 0 40px rgba(255, 255, 255, 0.2) !important;
+        border-radius: 24px;
+      }
+
+      .content-wrapper {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        min-height: 0;
+        padding: 2vh 0;
+        gap: 1.5vh;
+        overflow: hidden;
+        transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
       /* Focus Mode Layout Engine */
-      .content-wrapper { transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
-      #title, #time, #notes-container, .progress-container { 
+      #title, #time, #notes-container { 
         transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1); 
-        margin: 1.5vh 0;
       }
 
       body.focus-mode #title, 
@@ -251,15 +288,15 @@
         display: none;
         transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
         z-index: 100;
-        flex-shrink: 2; /* 🧬 Strategic shrink-to-fit behavior */
-        margin-bottom: 1vh;
-        max-height: 25vh; /* 🛡️ Prevent pushing other elements off-screen */
-        overflow-y: auto;
+        flex-shrink: 1;
+        min-height: 0;
       }
 
       #notes-container.active {
         opacity: 1;
-        display: block; /* Participates in flex flow when active */
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
 
       #notes-content {
@@ -286,15 +323,17 @@
   <body>
     <div id="bg-layer"></div>
     
-    <div id="title"></div>
-    
-    <div class="timer-stack">
-      <div id="label"></div>
-      <div id="time">00:00</div>
-    </div>
+    <div class="content-wrapper">
+      <div id="title"></div>
+      
+      <div class="timer-stack">
+        <div id="label"></div>
+        <div id="time">00:00</div>
+      </div>
 
-    <div id="notes-container">
-      <p id="notes-content"></p>
+      <div id="notes-container">
+        <p id="notes-content"></p>
+      </div>
     </div>
 
     <div class="progress-container">

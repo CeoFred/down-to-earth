@@ -143,6 +143,9 @@ if (typeof window.timerAPI === 'undefined') {
         cb(config);
       });
     },
+    flash: () => socket.emit('timer:flash'),
+    saveSettings: (settings) => socket.emit('timer:saveSettings', settings),
+    setNotes: (notes) => socket.emit('timer:setNotes', notes),
     // Authority methods (Remote side is read-only for these)
     stopTunnel: () => Promise.reject('Unauthorized'),
     kickDevice: () => Promise.reject('Unauthorized'),
@@ -866,6 +869,11 @@ window.addEventListener("DOMContentLoaded", async () => {
     currentPlaylistIndex = -1;
     renderPlaylist();
     showToast("Timer Reset", "info");
+  });
+
+  document.getElementById('flashBtn').addEventListener('click', () => {
+    window.timerAPI.flash();
+    showToast("Flash Command Sent ⚡️", "info");
   });
 
   document.getElementById('savePresetBtn').addEventListener('click', () => {

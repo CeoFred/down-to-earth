@@ -259,6 +259,10 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('timer:flash', () => {
+    broadcast('timer:flash');
+  });
+
   socket.on('timer:saveSettings', (settings) => {
     if (!authState) return socket.emit('auth:error', 'Authentication required');
     config.settings = { ...config.settings, ...settings };
@@ -373,6 +377,8 @@ function broadcast(channel, data) {
     io.emit('timer:configUpdate', data);
   } else if (channel === 'timer:notes') {
     io.emit('timer:notes', data);
+  } else if (channel === 'timer:flash') {
+    io.emit('timer:flash');
   }
 }
 
@@ -474,6 +480,10 @@ ipcMain.handle('timer:resume', () => {
 
 ipcMain.handle('timer:reset', () => {
   resetTimer();
+});
+
+ipcMain.handle('timer:flash', () => {
+  broadcast('timer:flash');
 });
 
 ipcMain.handle("timer:getState", () => {

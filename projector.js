@@ -21,7 +21,8 @@ window.addEventListener('DOMContentLoaded', async () => {
       onNotes: (cb) => socket.on('timer:notes', cb),
       onConfigUpdate: (cb) => socket.on('timer:configUpdate', cb),
       submitPin: (pin) => socket.emit('register', { pin }),
-      onAuth: (cb) => socket.on('registered', (res) => cb(res.success))
+      onAuth: (cb) => socket.on('registered', (res) => cb(res.success)),
+      onFlash: (cb) => socket.on('timer:flash', cb)
     };
 
     const overlay = document.getElementById('remoteAuthOverlay');
@@ -77,6 +78,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     const bgLayer = document.getElementById('bg-layer');
     let lastZone = 'green';
     let audioCtx = null;
+    let isFlashActive = false;
 
     function playBeep(freq = 880, duration = 0.15) {
       try {
@@ -143,9 +145,11 @@ window.addEventListener('DOMContentLoaded', async () => {
       const wrapUp = config?.settings?.wrapUp || { yellowMs: 60000, redMs: 30000, flashOnRed: true, flashOnOvertime: true };
 
       const container = document.querySelector('.progress-container');
+      const timerStack = document.querySelector('.timer-stack');
 
       if (isOvertime) {
         if (titleEl) titleEl.style.display = 'none';
+        if (timerStack) timerStack.style.display = vis.showTimer ? 'flex' : 'none';
         label.style.display = 'none';
         timeDisplay.style.display = vis.showTimer ? 'block' : 'none';
         timeDisplay.textContent = `-${formatTime(overtimeMs)}`;
@@ -163,6 +167,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         setSegments(0, totalMs, wrapUp);
       } else {
         if (titleEl) titleEl.style.display = vis.showTitle ? 'block' : 'none';
+        if (timerStack) timerStack.style.display = vis.showTimer ? 'flex' : 'none';
         label.style.display = 'block';
         label.textContent = '';
         timeDisplay.style.display = vis.showTimer ? 'block' : 'none';
@@ -182,10 +187,21 @@ window.addEventListener('DOMContentLoaded', async () => {
           bgLayer.classList.remove('urgency');
         }
 
+        // Apply Flash Persistent State
+        if (isFlashActive) {
+          timeDisplay.classList.add('flash-active');
+          const notesContainer = document.getElementById('notes-container');
+          if (notesContainer) notesContainer.classList.add('notes-flash');
+        } else {
+          timeDisplay.classList.remove('flash-active');
+          const notesContainer = document.getElementById('notes-container');
+          if (notesContainer) notesContainer.classList.remove('notes-flash');
+        }
+
         // Restore lastZone if we reset to high time
         if (remainingMs > wrapUp.yellowMs) lastZone = 'green';
 
-        // Progress Calculation & Visibility
+        // Progress Bar Visibility
         if (container) container.style.display = vis.showBar ? 'flex' : 'none';
 
         if (totalMs > 0) {
@@ -293,6 +309,35 @@ window.addEventListener('DOMContentLoaded', async () => {
       window.currentNotes = notes;
       updateNotes(notes);
     });
+
+    if (window.timerAPI.onFlash) {
+      window.timerAPI.onFlash(() => {
+        // Activate persistent flash state
+        isFlashActive = true;
+        
+        // Immediate physical blast effect (Flash the entire background white)
+        document.body.classList.add('flash-blast');
+        setTimeout(() => document.body.classList.remove('flash-blast'), 200);
+
+        // Immediate manual render to apply styles instantly
+        if (window.lastState || state) {
+          render(window.lastState || state);
+        }
+
+        // Auto-clear after production-safe interval (3s)
+        setTimeout(() => {
+          isFlashActive = false;
+          // Render again to clear styles
+          if (window.lastState || state) {
+            render(window.lastState || state);
+          }
+        }, 3000);
+        
+        // Trigger high-attention signaling beep
+        playBeep(1200, 0.1); 
+        setTimeout(() => playBeep(1200, 0.1), 150);
+      });
+    }
 
     // Initial setup
     if (state.customTitle) {
