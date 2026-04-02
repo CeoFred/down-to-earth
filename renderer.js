@@ -619,6 +619,7 @@ window.renderState = function(state) {
   if (config) {
     appConfig = config;
     renderCustomPresets();
+    renderMessages();
     // Update settings UI if they changed
     const autoAdvance = document.getElementById('autoAdvanceToggle');
     if (autoAdvance) autoAdvance.checked = config.settings.autoAdvance;
