@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Down to Earth Controller</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
@@ -31,8 +34,7 @@
         align-items: center;
         justify-content: center;
         background: radial-gradient(circle at top, #111827 0, #020617 55%);
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-          sans-serif;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
         color: var(--text);
         padding: 12px;
       }
@@ -410,6 +412,100 @@
         margin: 0 4px;
       }
 
+      .message-card {
+        background: rgba(15, 23, 42, 0.4);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 16px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        transition: all 0.2s ease;
+      }
+
+      .message-card.active {
+        border-color: var(--accent);
+        background: rgba(59, 130, 246, 0.08);
+        box-shadow: 0 0 20px rgba(59, 130, 246, 0.1);
+      }
+
+      .add-message-card {
+        align-items: center;
+        justify-content: center;
+        border: 2px dashed rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.02);
+        cursor: pointer;
+        min-height: 60px;
+        transition: all 0.2s ease;
+      }
+
+      .add-message-card:hover {
+        border-color: var(--accent);
+        background: rgba(59, 130, 246, 0.05);
+      }
+
+      .format-btn {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        color: var(--muted);
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .format-btn.active {
+        background: var(--accent);
+        color: white;
+        border-color: transparent;
+      }
+
+      .msg-input {
+        background: transparent;
+        border: none;
+        color: white;
+        font-family: inherit;
+        font-size: 14px;
+        font-weight: 600;
+        width: 100%;
+        padding: 4px 0;
+        outline: none;
+      }
+
+      .msg-input::placeholder {
+        color: var(--muted);
+      }
+
+      .show-toggle-btn {
+        padding: 8px 16px;
+        border-radius: 10px;
+        font-size: 11px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border: 1px solid transparent;
+      }
+
+      .show-toggle-btn.off {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: rgba(255, 255, 255, 0.1);
+        color: var(--muted);
+      }
+
+      .show-toggle-btn.on {
+        background: var(--accent);
+        color: white;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+      }
+
       @media (max-width: 480px) {
         body { padding: 8px; }
         .card { padding: 18px; border-radius: 20px; }
@@ -436,7 +532,7 @@
         <nav class="tab-nav">
           <button class="tab-btn active" data-tab="timer">Timer</button>
           <button class="tab-btn" data-tab="playlist">Playlist</button>
-          <button class="tab-btn" data-tab="presets">Presets</button>
+          <button class="tab-btn" data-tab="messages">Messages</button>
           <button class="tab-btn" data-tab="appearance">Appearance</button>
           <button class="tab-btn" data-tab="output">Output</button>
           <button class="tab-btn" data-tab="settings">Settings</button>
@@ -461,16 +557,9 @@
               <input id="seconds" type="number" min="0" max="59" value="0" class="field-input" />
             </div>
           </div>
-
-
-          <div class="field" style="margin-bottom: 14px;">
+          <div class="field" style="margin-bottom: 20px;">
             <label class="field-label" for="customTitle">Title</label>
             <input id="customTitle" type="text" placeholder="e.g. Sermon Timer" class="field-input" />
-          </div>
-
-          <div class="field" style="margin-bottom: 14px;">
-            <label class="field-label" for="stageNotes">Stage Notes (Visible on Projector)</label>
-            <textarea id="stageNotes" placeholder="e.g. Look at Camera 2, Wrap up now" class="field-input" style="height: 60px; resize: none; padding: 10px;"></textarea>
           </div>
 
           <div class="controls-row" style="margin-bottom: 12px;">
@@ -486,6 +575,51 @@
             <button id="addToPlaylistBtn" class="btn btn-ghost" style="font-size: 11px; border-style: solid; border-width: 1px;">
               ➕ Add to Playlist
             </button>
+          </div>
+
+          <!-- Integrated Presets -->
+          <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, 0.05);">
+            <div class="field-label" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+              <span>Quick Presets</span>
+              <span style="font-size: 9px; opacity: 0.5; text-transform: none; font-weight: normal;">Standard durations</span>
+            </div>
+            <div class="presets-row" style="margin-bottom: 16px;">
+              <button class="preset-btn" data-minutes="5">5m</button>
+              <button class="preset-btn" data-minutes="10">10m</button>
+              <button class="preset-btn" data-minutes="20">20m</button>
+              <button class="preset-btn" data-minutes="30">30m</button>
+              <button class="preset-btn" data-minutes="45">45m</button>
+              <button class="preset-btn" data-minutes="60">60m</button>
+            </div>
+            
+            <div class="field-label" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+              <span>Library</span>
+              <span style="font-size: 9px; opacity: 0.5; text-transform: none; font-weight: normal;">Your custom saves</span>
+            </div>
+            <div id="customPresetsContainer" class="presets-row">
+              <div style="font-size: 11px; color: var(--muted); width: 100%; text-align: center;">No custom presets yet.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MESSAGES TAB -->
+        <div id="messagesTab" class="tab-content">
+          <div style="margin-bottom:20px;">
+            <div style="font-size:14px; font-weight:800; color:#fff;">Message Library</div>
+            <div style="font-size:10px; color:var(--muted);">Select and format messages for the talent</div>
+          </div>
+
+          <div id="messagesContainer" style="display:flex; flex-direction:column; gap:12px; max-height:450px; overflow-y:auto; padding-right:4px; padding-top:4px;">
+            <!-- Primary Add Message Action (Static) -->
+            <button id="addMessageBtn" class="message-card add-message-card">
+              <div style="display:flex; align-items:center; gap:10px; color:var(--accent);">
+                <span style="font-size:20px; font-weight:300;">+</span>
+                <span style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em;">Register New Message</span>
+              </div>
+            </button>
+
+            <!-- Dynamic Message List -->
+            <div id="messagesList" style="display:flex; flex-direction:column; gap:12px;"></div>
           </div>
         </div>
 
@@ -503,23 +637,6 @@
           </div>
         </div>
 
-        <!-- PRESETS TAB -->
-        <div id="presetsTab" class="tab-content">
-          <div class="field-label" style="margin-bottom: 10px;">Standard Presets</div>
-          <div class="presets-row">
-            <button class="preset-btn" data-minutes="5">5m</button>
-            <button class="preset-btn" data-minutes="10">10m</button>
-            <button class="preset-btn" data-minutes="20">20m</button>
-            <button class="preset-btn" data-minutes="30">30m</button>
-            <button class="preset-btn" data-minutes="45">45m</button>
-            <button class="preset-btn" data-minutes="60">60m</button>
-          </div>
-          
-          <div class="field-label" style="margin: 20px 0 10px;">Custom Presets</div>
-          <div id="customPresetsContainer" class="presets-row">
-            <div style="font-size: 11px; color: var(--muted); width: 100%; text-align: center;">No custom presets yet.</div>
-          </div>
-        </div>
 
         <!-- APPEARANCE TAB -->
         <div id="appearanceTab" class="tab-content" style="padding: 4px;">
@@ -636,34 +753,119 @@
 
         <!-- OUTPUT TAB -->
         <div id="outputTab" class="tab-content" style="padding: 4px;">
-          <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--accent); font-weight: 800; margin-bottom: 20px; display: flex; align-items: center; gap: 8px;">
-            <span style="width: 20px; height: 1px; background: var(--accent); opacity: 0.3;"></span>
-            Remote Access Links
+
+          <!-- Section Header -->
+          <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.15em; color: var(--accent); font-weight: 800; margin-bottom: 16px;">Network Access</div>
+
+          <!-- Local Network Card -->
+          <div style="background: rgba(59,130,246,0.06); border: 1px solid rgba(59,130,246,0.15); border-radius: 14px; padding: 16px; margin-bottom: 12px;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+              <span style="font-size:16px;">🏠</span>
+              <div>
+                <div style="font-size:12px; font-weight:700; color:#fff;">Local Network</div>
+                <div style="font-size:10px; color:var(--muted);">Same Wi-Fi only</div>
+              </div>
+            </div>
+           
+            <div style="display:flex; gap:6px;">
+              <div style="flex:1; background:rgba(0,0,0,0.3); border-radius:8px; padding:8px 12px; display:flex; align-items:center; gap:6px;">
+                <span style="font-size:10px; color:var(--muted); font-weight:600;">CONTROLLER</span>
+                <input type="text" id="linkController" readonly style="background:none; border:none; outline:none; color:#94a3b8; font-size:10px; flex:1; font-family:'Inter',monospace;" value="Loading...">
+                <button onclick="copyToClipboard('linkController')" style="background:none; border:none; color:var(--accent); font-size:10px; cursor:pointer; font-weight:700; padding:0;">Copy</button>
+              </div>
+            </div>
+            <div style="display:flex; gap:6px; margin-top:6px;">
+              <div style="flex:1; background:rgba(0,0,0,0.3); border-radius:8px; padding:8px 12px; display:flex; align-items:center; gap:6px;">
+                <span style="font-size:10px; color:var(--muted); font-weight:600;">PROJECTOR</span>
+                <input type="text" id="linkProjector" readonly style="background:none; border:none; outline:none; color:#94a3b8; font-size:10px; flex:1; font-family:'Inter',monospace;" value="Loading...">
+                <button onclick="copyToClipboard('linkProjector')" style="background:none; border:none; color:var(--accent); font-size:10px; cursor:pointer; font-weight:700; padding:0;">Copy</button>
+              </div>
+            </div>
           </div>
 
-          <!-- Remote Controller -->
-          <div class="setting-group" style="background: rgba(15, 23, 42, 0.3); padding: 20px; border-radius: 16px; margin-bottom: 20px; border: 1px solid rgba(148, 163, 184, 0.1);">
-            <div style="font-size: 13px; font-weight: 700; color: white; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
-               <span style="color: var(--accent);">🎮</span> Remote Controller
+          <!-- Security & PIN -->
+          <div style="background: rgba(15,23,42,0.5); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 18px; margin-bottom: 12px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+              <div>
+                <div style="font-size:12px; font-weight:700; color:#fff;">Security PIN</div>
+                <div style="font-size:10px; color:var(--muted);">Global code for all remote access</div>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px;">
+                <div style="font-size:24px; font-weight:900; font-family:'Inter',monospace; letter-spacing:0.1em; color:var(--accent);" id="pinDisplay">----</div>
+                <button id="refreshPinBtn" class="btn-icon" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:6px; cursor:pointer;" title="Generate New PIN">🔄</button>
+              </div>
             </div>
-            <p style="font-size: 11px; color: var(--muted); margin-bottom: 16px;">Access the production deck from any mobile device or tablet on the same network.</p>
-            <div style="display: flex; gap: 8px;">
-              <input type="text" id="linkController" value="Loading..." readonly class="field-input" style="flex: 1; font-family: monospace; font-size: 12px; background: rgba(0,0,0,0.3);">
-              <button onclick="copyToClipboard('linkController')" class="btn btn-secondary" style="padding: 10px 16px; font-size: 11px;">Copy</button>
+
+            <div style="height:1px; background:rgba(255,255,255,0.05); margin-bottom:16px;"></div>
+
+            <div style="font-size:10px; text-transform:uppercase; letter-spacing:0.1em; color:var(--muted); font-weight:800; margin-bottom:12px;">Security Policies</div>
+            
+            <div style="display:flex; flex-direction:column; gap:12px;">
+              <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.03); padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.03);">
+                <div>
+                  <div style="font-size:12px; font-weight:600; color:#fff;">Require PIN for Controller</div>
+                  <div style="font-size:9px; color:var(--muted);">PIN prompt for remote control devices</div>
+                </div>
+                <label class="toggle" style="transform: scale(0.8);">
+                  <input type="checkbox" id="requirePinController" checked>
+                  <span class="slider"></span>
+                </label>
+              </div>
+
+              <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.03); padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.03);">
+                <div>
+                  <div style="font-size:12px; font-weight:600; color:#fff;">Require PIN for Projector</div>
+                  <div style="font-size:9px; color:var(--muted);">PIN prompt for talent/viewer screens</div>
+                </div>
+                <label class="toggle" style="transform: scale(0.8);">
+                  <input type="checkbox" id="requirePinProjector" checked>
+                  <span class="slider"></span>
+                </label>
+              </div>
             </div>
           </div>
 
-          <!-- Remote Viewer -->
-          <div class="setting-group" style="background: rgba(15, 23, 42, 0.3); padding: 20px; border-radius: 16px; margin-bottom: 20px; border: 1px solid rgba(148, 163, 184, 0.1);">
-            <div style="font-size: 13px; font-weight: 700; color: white; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
-               <span style="color: var(--accent);">🎬</span> Remote Talent View
+          <!-- Global Tunnel Card -->
+          <div style="background: rgba(15,23,42,0.5); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 16px; margin-bottom: 12px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:16px;">🌍</span>
+                <div>
+                  <div style="font-size:12px; font-weight:700; color:#fff;">Global Access</div>
+                  <div style="font-size:10px; color:var(--muted);">Public cloud tunnel</div>
+                </div>
+              </div>
+              <button id="startTunnelBtn" class="btn" style="font-size:11px; padding:8px 14px; background:var(--accent); color:#fff; border:none;">Go Global</button>
+              <button id="stopTunnelBtn" class="btn" style="font-size:11px; padding:8px 14px; background:rgba(239,68,68,0.15); color:#ef4444; border:1px solid rgba(239,68,68,0.2); display:none;">Stop Tunnel</button>
             </div>
-            <p style="font-size: 11px; color: var(--muted); margin-bottom: 16px;">Mirror the projection screen on remote monitors or talent screens.</p>
-            <div style="display: flex; gap: 8px;">
-              <input type="text" id="linkProjector" value="Loading..." readonly class="field-input" style="flex: 1; font-family: monospace; font-size: 12px; background: rgba(0,0,0,0.3);">
-              <button onclick="copyToClipboard('linkProjector')" class="btn btn-secondary" style="padding: 10px 16px; font-size: 11px;">Copy</button>
+            <div style="display:flex; gap:6px;">
+              <input type="text" id="globalUrlDisplay" value="Not active" readonly class="field-input" style="flex:1; font-family:'Inter',monospace; font-size:11px; background:rgba(0,0,0,0.3); color:var(--muted);">
+              <button id="copyGlobalBtn" onclick="copyToClipboard('globalUrlDisplay')" class="btn btn-secondary" style="padding:8px 14px; font-size:11px; display:none;">📋</button>
             </div>
           </div>
+
+          <!-- QR Code -->
+          <div style="background: rgba(15,23,42,0.3); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 16px; margin-bottom: 12px; display:flex; align-items:center; gap:16px;">
+            <div id="qrcode" style="background:#fff; border-radius:8px; padding:8px; flex-shrink:0;"></div>
+            <div>
+              <div style="font-size:12px; font-weight:700; color:#fff; margin-bottom:4px;">Scan to Connect</div>
+              <div style="font-size:10px; color:var(--muted);">Points to global URL if active, otherwise local network</div>
+            </div>
+          </div>
+
+          <!-- Device Monitor -->
+          <div style="font-size:10px; text-transform:uppercase; letter-spacing:0.15em; color:var(--accent); font-weight:800; margin-bottom:12px; display:flex; align-items:center; justify-content:space-between;">
+            <span>Connected Devices</span>
+            <span id="deviceCountBadge" style="font-size:9px; background:rgba(59,130,246,0.15); color:var(--accent); padding:2px 8px; border-radius:999px; text-transform:none;">0 Active</span>
+          </div>
+          <div style="background: rgba(15,23,42,0.4); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; overflow:hidden; margin-bottom: 16px;">
+            <table style="width:100%; border-collapse:collapse; font-size:11px;">
+              <tbody id="devicesTableBody">
+                <tr><td colspan="3" style="padding:20px; text-align:center; color:var(--muted);">No remote devices connected.</td></tr>
+              </tbody>
+            </table>
+          </div>
+
         </div>
 
         <!-- SETTINGS TAB -->
@@ -736,72 +938,7 @@
             </div>
           </div>
 
-          <!-- Global Connectivity Section -->
-          <div class="setting-row" style="flex-direction: column; align-items: flex-start; gap: 16px; padding: 20px; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 20px; margin: 16px 0;">
-            <div style="width: 100%; display: flex; justify-content: space-between; align-items: center;">
-              <div style="font-size: 13px; font-weight: 800; color: var(--accent); text-transform: uppercase; letter-spacing: 0.1em;">Production Access Hub</div>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; font-weight: 600;">Security PIN</span>
-                <div style="display: flex; align-items: center; gap: 6px;">
-                  <div id="pinDisplay" style="font-family: ui-monospace; font-weight: 900; background: var(--accent); color: white; padding: 4px 10px; border-radius: 8px; font-size: 16px; letter-spacing: 2px;">----</div>
-                  <button id="refreshPinBtn" title="New Security Code" style="background: none; border: none; cursor: pointer; padding: 0; display: flex; align-items: center; opacity: 0.5; transition: opacity 0.2s;">🔄</button>
-                </div>
-              </div>
-            </div>
-
-            <div style="display: flex; gap: 20px; width: 100%; align-items: flex-start;">
-              <div id="qrcode" style="padding: 12px; background: white; border-radius: 12px; display: flex; align-items: center; justify-content: center; min-width: 140px; min-height: 140px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);"></div>
-              
-              <div style="flex: 1; display: flex; flex-direction: column; gap: 12px;">
-                <!-- Local Access -->
-                <div style="display: flex; flex-direction: column; gap: 4px;">
-                  <div style="font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase;">Local Network (WiFi)</div>
-                  <div style="display: flex; gap: 6px;">
-                    <div id="localUrlDisplay" style="flex: 1; font-size: 11px; font-family: ui-monospace; background: rgba(15, 23, 42, 0.5); padding: 8px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); word-break: break-all; opacity: 0.8;">Detecting...</div>
-                    <button onclick="copyToClipboard(document.getElementById('localUrlDisplay').textContent)" style="padding: 0 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white; cursor: pointer; transition: background 0.2s;">📋</button>
-                  </div>
-                </div>
-
-                <!-- Global Access -->
-                <div style="display: flex; flex-direction: column; gap: 4px;">
-                  <div style="font-size: 10px; font-weight: 700; color: #f38020; text-transform: uppercase;">Global Cloud Access</div>
-                  <div style="display: flex; gap: 6px;">
-                    <div id="globalUrlDisplay" style="flex: 1; font-size: 11px; font-family: ui-monospace; background: rgba(15, 23, 42, 0.5); padding: 8px; border-radius: 6px; border: 1px solid rgba(243, 128, 32, 0.2); word-break: break-all;">Configure Cloud Tunnel...</div>
-                    <button id="copyGlobalBtn" onclick="copyToClipboard(document.getElementById('globalUrlDisplay').textContent)" style="padding: 0 10px; background: rgba(243, 128, 32, 0.1); border: 1px solid rgba(243, 128, 32, 0.3); border-radius: 6px; color: #f38020; cursor: pointer; display: none;">📋</button>
-                  </div>
-                </div>
-
-                <div style="padding-top: 4px; display: flex; gap: 8px;">
-                  <button id="startTunnelBtn" class="btn btn-primary" style="flex: 1; padding: 10px 16px; font-size: 12px; font-weight: 700; border-radius: 10px;">Go Global (Public Cloud)</button>
-                  <button id="stopTunnelBtn" class="btn" style="display: none; padding: 10px 16px; font-size: 12px; font-weight: 700; border-radius: 10px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444;">Disable Global Access</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Connected Devices Section -->
-          <div class="setting-card" style="margin-top: 16px;">
-            <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
-              <span>Connected Remote Devices</span>
-              <span id="deviceCountBadge" style="font-size: 10px; background: var(--accent); color: white; padding: 2px 8px; border-radius: 10px;">0 Active</span>
-            </div>
-            <div style="max-height: 200px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
-              <table style="width: 100%; border-collapse: collapse; font-size: 11px; color: var(--text);">
-                <thead style="background: rgba(255,255,255,0.03); text-transform: uppercase; font-size: 9px; letter-spacing: 0.05em; color: var(--muted);">
-                  <tr>
-                    <th style="padding: 10px; text-align: left;">Device Info</th>
-                    <th style="padding: 10px; text-align: left;">Status</th>
-                    <th style="padding: 10px; text-align: right;">Action</th>
-                  </tr>
-                </thead>
-                <tbody id="devicesTableBody">
-                  <tr>
-                    <td colspan="3" style="padding: 20px; text-align: center; color: var(--muted);">No remote devices connected.</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+    
 
           <div class="setting-row" style="flex-direction: column; align-items: flex-start; gap: 12px; margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.05);">
             <div style="font-size: 15px; font-weight: 700; color: var(--accent); letter-spacing: 0.02em; text-transform: uppercase;">Wrap-up Timing</div>

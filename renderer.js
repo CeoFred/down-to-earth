@@ -36,11 +36,11 @@ if (typeof window.timerAPI === 'undefined') {
         showToast("Waiting for connection...", "warning");
         return;
       }
-      
       const pin = pinInput.value;
       if (pin.length === 4) {
         socket.emit('register', { 
           pin, 
+          clientType: 'controller',
           deviceId: getDeviceId(),
           userAgent: navigator.userAgent
         });
@@ -51,15 +51,37 @@ if (typeof window.timerAPI === 'undefined') {
       }
     });
 
-    // Auto-re-register if session exists
-    const savedPin = sessionStorage.getItem('production_pin');
-    if (savedPin && authOverlay) {
-      socket.emit('register', { 
-        pin: savedPin, 
-        deviceId: getDeviceId(),
-        userAgent: navigator.userAgent
-      });
-    }
+    // Auto-bypass if PIN not required, or re-register from session
+    socket.on('connect', () => {
+      socket.emit('timer:identify', { deviceId: getDeviceId(), userAgent: navigator.userAgent });
+
+      // Fetch state first to check if PIN is required      
+      socket.emit('timer:getState');
+    });
+
+    socket.once('timer:state', (state) => {
+      const pinRequired = state?.config?.settings?.requirePinController !== false;
+      if (!pinRequired) {
+        // Auto-authenticate without PIN
+        socket.emit('register', {
+          pin: '',
+          clientType: 'controller',
+          deviceId: getDeviceId(),
+          userAgent: navigator.userAgent
+        });
+        return;
+      }
+      // Try saved session PIN
+      const savedPin = sessionStorage.getItem('production_pin');
+      if (savedPin && authOverlay) {
+        socket.emit('register', {
+          pin: savedPin,
+          clientType: 'controller',
+          deviceId: getDeviceId(),
+          userAgent: navigator.userAgent
+        });
+      }
+    });
 
     socket.on('registered', ({ success, error }) => {
       const authOverlay = document.getElementById('remoteAuthOverlay');
@@ -146,10 +168,26 @@ if (typeof window.timerAPI === 'undefined') {
     flash: () => socket.emit('timer:flash'),
     saveSettings: (settings) => socket.emit('timer:saveSettings', settings),
     setNotes: (notes) => socket.emit('timer:setNotes', notes),
-    // Authority methods (Remote side is read-only for these)
-    stopTunnel: () => Promise.reject('Unauthorized'),
-    kickDevice: () => Promise.reject('Unauthorized'),
-    blockDevice: () => Promise.reject('Unauthorized')
+    startTunnel: () => new Promise((resolve, reject) => {
+      socket.emit('timer:startTunnel');
+      socket.once('timer:tunnelResult', (res) => {
+        if (res.success) resolve(res.url);
+        else reject(new Error(res.error));
+      });
+    }),
+    stopTunnel: () => new Promise((resolve) => {
+      socket.emit('timer:stopTunnel');
+      socket.once('timer:tunnelStopped', () => resolve(true));
+    }),
+    getDevices: () => new Promise((resolve) => {
+      socket.emit('timer:getDevices');
+      socket.once('timer:devicesUpdate', (devices) => resolve(devices));
+    }),
+    onDevicesUpdate: (cb) => socket.on('timer:devicesUpdate', cb),
+    blockDevice: (socketId, deviceId) => socket.emit('timer:blockDevice', { socketId, deviceId }),
+    unblockDevice: (deviceId) => socket.emit('timer:unblockDevice', deviceId),
+    refreshPin: () => Promise.reject('Not available remotely'),
+    stopTunnelFn: () => Promise.reject('Not available remotely')
   };
 
   socket.on('connect', async () => {
@@ -189,12 +227,26 @@ function showToast(text, type = 'success') {
   }).showToast();
 }
 
-window.copyToClipboard = (text) => {
-  if (!text || text.includes('...')) return;
-  navigator.clipboard.writeText(text).then(() => {
-    showToast("URL copied to clipboard!", "success");
-  }).catch(err => {
-    showToast("Failed to copy URL", "error");
+window.copyToClipboard = (elementIdOrText) => {
+  let text = elementIdOrText;
+  const el = document.getElementById(elementIdOrText);
+  if (el) text = el.value || el.textContent || el.innerText;
+
+  if (!text || text === 'Loading...' || text === '—') {
+    showToast("No URL available to copy", "warning");
+    return;
+  }
+  navigator.clipboard.writeText(text.trim()).then(() => {
+    showToast("Copied to clipboard!", "success");
+  }).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = text.trim();
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast("Copied to clipboard!", "success");
   });
 };
 
@@ -334,19 +386,146 @@ function formatTime(ms) {
 function renderCustomPresets() {
   const container = document.getElementById('customPresetsContainer');
   if (!container) return;
-  
-  if (appConfig.customPresets.length === 0) {
+
+  const presets = appConfig.customPresets || [];
+  if (presets.length === 0) {
     container.innerHTML = '<div style="font-size: 11px; color: var(--muted); width: 100%; text-align: center;">No custom presets yet.</div>';
     return;
   }
 
-  container.innerHTML = appConfig.customPresets.map(p => `
-    <div class="preset-btn" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 120px;">
-      <span onclick="applyPreset(${p.minutes}, ${p.seconds}, '${p.title}', ${p.yellowSec || 'null'}, ${p.redSec || 'null'})" style="flex: 1;">${p.title || p.minutes + 'm'}</span>
-      <span onclick="deletePreset('${p.id}')" style="opacity: 0.5; font-size: 14px;">&times;</span>
+  container.innerHTML = presets.map(p => `
+    <div class="preset-btn-wrapper" style="position: relative; flex: 1; min-width: 80px;">
+      <button class="preset-btn" onclick="loadTimerPreset(${p.minutes}, ${p.seconds}, '${p.title.replace(/'/g, "\\'")}')" style="width: 100%; text-align: left; padding: 10px; border-radius: 12px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); color: white; cursor: pointer; transition: all 0.2s ease;">
+        <span style="font-size: 13px; font-weight: 800; display: block;">${p.minutes}m</span>
+        <span style="font-size: 9px; opacity: 0.6; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${p.title}</span>
+      </button>
+      <button onclick="deletePreset('${p.id}')" style="position: absolute; top: -5px; right: -5px; width: 18px; height: 18px; border-radius: 50%; background: #ef4444; border: none; color: white; font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.3); z-index: 10;">×</button>
     </div>
   `).join('');
 }
+
+window.loadTimerPreset = (mins, secs, title) => {
+  document.getElementById('minutes').value = mins;
+  document.getElementById('seconds').value = secs;
+  document.getElementById('customTitle').value = title;
+  showToast(`Loaded: ${title}`, "info");
+};
+
+function renderMessages() {
+  const container = document.getElementById('messagesList');
+  if (!container) return;
+
+  const messages = appConfig.settings.messages || [];
+  const activeId = appConfig.settings.activeMessageId;
+
+  if (messages.length === 0) {
+    container.innerHTML = `
+      <div style="text-align: center; color: var(--muted); padding: 40px 0; font-size: 12px; background: rgba(255,255,255,0.02); border-radius:16px;">
+        No messages created yet.
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = messages.map(msg => {
+    const isActive = activeId === msg.id;
+    return `
+      <div class="message-card ${isActive ? 'active' : ''}" data-id="${msg.id}">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+          <input type="text" class="msg-input" value="${msg.text}" placeholder="Type your message..." onchange="updateMessageText('${msg.id}', this.value)">
+          <button onclick="deleteMessage('${msg.id}')" style="background:none; border:none; opacity:0.3; cursor:pointer; font-size:14px; padding:4px;">🗑️</button>
+        </div>
+        
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button class="format-btn ${msg.bold ? 'active' : ''}" onclick="toggleMessageFormat('${msg.id}', 'bold')" title="Bold">B</button>
+            <button class="format-btn ${msg.caps ? 'active' : ''}" onclick="toggleMessageFormat('${msg.id}', 'caps')" title="All Caps">AA</button>
+            
+            <div style="width:1px; height:16px; background:rgba(255,255,255,0.1); margin:0 4px;"></div>
+            
+            <button class="format-btn ${msg.flash ? 'active' : ''}" style="width:auto; padding:0 8px; font-size:9px;" onclick="toggleMessageFormat('${msg.id}', 'flash')">FLASH</button>
+            <button class="format-btn ${msg.focus ? 'active' : ''}" style="width:auto; padding:0 8px; font-size:9px;" onclick="toggleMessageFormat('${msg.id}', 'focus')">FOCUS</button>
+            
+            <div style="width:1px; height:16px; background:rgba(255,255,255,0.1); margin:0 4px;"></div>
+            
+            <div style="display:flex; align-items:center; gap:4px; background:rgba(255,255,255,0.03); padding:4px 8px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
+              <input type="color" value="${msg.color || '#ffffff'}" onchange="updateMessageColor('${msg.id}', this.value)" style="width:18px; height:18px; border:none; background:none; cursor:pointer; padding:0;">
+              <span style="font-size:9px; font-family:monospace; opacity:0.6;">${(msg.color || '#ffffff').toUpperCase()}</span>
+            </div>
+          </div>
+          
+          <button class="show-toggle-btn ${isActive ? 'on' : 'off'}" onclick="toggleMessageVisibility('${msg.id}')">
+            ${isActive ? 'Hide' : 'Show'}
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+window.updateMessageText = (id, text) => {
+  const messages = [...(appConfig.settings.messages || [])];
+  const idx = messages.findIndex(m => m.id === id);
+  if (idx !== -1) {
+    messages[idx].text = text;
+    window.timerAPI.saveSettings({ messages });
+    syncActiveMessage(id, messages[idx]);
+  }
+};
+
+window.updateMessageColor = (id, color) => {
+  const messages = [...(appConfig.settings.messages || [])];
+  const idx = messages.findIndex(m => m.id === id);
+  if (idx !== -1) {
+    messages[idx].color = color;
+    window.timerAPI.saveSettings({ messages });
+    syncActiveMessage(id, messages[idx]);
+  }
+};
+
+window.toggleMessageFormat = (id, field) => {
+  const messages = [...(appConfig.settings.messages || [])];
+  const idx = messages.findIndex(m => m.id === id);
+  if (idx !== -1) {
+    messages[idx][field] = !messages[idx][field];
+    window.timerAPI.saveSettings({ messages });
+    syncActiveMessage(id, messages[idx]);
+  }
+};
+
+function syncActiveMessage(id, msgData) {
+  if (appConfig.settings.activeMessageId === id) {
+    window.timerAPI.setNotes(msgData);
+  }
+}
+
+window.toggleMessageVisibility = (id) => {
+  const currentActive = appConfig.settings.activeMessageId;
+  const newActive = (currentActive === id) ? null : id;
+  
+  // Update setting immediately
+  window.timerAPI.saveSettings({ activeMessageId: newActive });
+  
+  // Send the actual display signal to the projector
+  if (newActive) {
+    const msg = appConfig.settings.messages.find(m => m.id === id);
+    if (msg) {
+      window.timerAPI.setNotes(msg);
+    }
+  } else {
+    window.timerAPI.setNotes("");
+  }
+};
+
+window.deleteMessage = (id) => {
+  if (appConfig.settings.activeMessageId === id) {
+    window.timerAPI.setNotes("");
+    window.timerAPI.saveSettings({ activeMessageId: null });
+  }
+  const messages = (appConfig.settings.messages || []).filter(m => m.id !== id);
+  window.timerAPI.saveSettings({ messages });
+  showToast("Message deleted", "info");
+};
 
 function renderPlaylist() {
   const container = document.getElementById('playlistContainer');
@@ -585,54 +764,47 @@ window.renderState = function(state) {
 
 function updateConnectivityUI(config) {
   if (!config) return;
+  const baseUrl = config.tunnelUrl || config.localUrl || `http://${window.location.hostname}:8321`;
   const localUrl = config.localUrl || `http://${window.location.hostname}:8321`;
   const globalUrl = config.tunnelUrl;
-  
+
+  // Populate all URL fields
   const localDisplay = document.getElementById('localUrlDisplay');
   const globalDisplay = document.getElementById('globalUrlDisplay');
   const pinDisplay = document.getElementById('pinDisplay');
+  const linkController = document.getElementById('linkController');
+  const linkProjector = document.getElementById('linkProjector');
   const copyGlobalBtn = document.getElementById('copyGlobalBtn');
-  const startBtn = document.getElementById('startTunnelBtn');
+  const reqPinController = document.getElementById('requirePinController');
+  const reqPinProjector = document.getElementById('requirePinProjector');
+
+  if (localDisplay) localDisplay.value = localUrl;
+  if (pinDisplay) pinDisplay.textContent = config.settings?.securityPin || '----';
   
-  // Always show local address and security PIN
-  if (localDisplay) localDisplay.textContent = localUrl;
-  if (pinDisplay) pinDisplay.textContent = config.settings?.securityPin || "----";
-  
+  if (reqPinController) reqPinController.checked = config.settings?.requirePinController !== false;
+  if (reqPinProjector) reqPinProjector.checked = config.settings?.requirePinProjector !== false;
+
+  if (linkController) linkController.value = localUrl + '/';
+  if (linkProjector) linkProjector.value = localUrl + '/projector';
+
   if (globalUrl) {
-    if (globalDisplay) {
-      globalDisplay.textContent = globalUrl;
-      globalDisplay.style.color = "#f38020";
-      globalDisplay.style.fontWeight = "800";
-    }
-    if (copyGlobalBtn) copyGlobalBtn.style.display = "block";
-    
+    if (globalDisplay) { globalDisplay.value = globalUrl; globalDisplay.style.color = '#f38020'; }
+    if (copyGlobalBtn) copyGlobalBtn.style.display = 'block';
     const startBtn = document.getElementById('startTunnelBtn');
     const stopBtn = document.getElementById('stopTunnelBtn');
     if (startBtn) startBtn.style.display = 'none';
     if (stopBtn) stopBtn.style.display = 'block';
   } else {
-    // Tunnel inactive
-    if (globalDisplay) {
-      globalDisplay.textContent = "Configure Cloud Tunnel...";
-      globalDisplay.style.color = "var(--muted)";
-      globalDisplay.style.fontWeight = "400";
-    }
-    if (copyGlobalBtn) copyGlobalBtn.style.display = "none";
-    
+    if (globalDisplay) { globalDisplay.value = 'Not active'; globalDisplay.style.color = 'var(--muted)'; }
+    if (copyGlobalBtn) copyGlobalBtn.style.display = 'none';
     const startBtn = document.getElementById('startTunnelBtn');
     const stopBtn = document.getElementById('stopTunnelBtn');
-    if (startBtn) {
-      startBtn.style.display = 'block';
-      startBtn.textContent = 'Go Global (Public Cloud)';
-      startBtn.style.background = 'var(--accent)'; 
-      startBtn.style.pointerEvents = 'auto';
-      startBtn.disabled = false;
-    }
+    if (startBtn) { startBtn.style.display = 'block'; startBtn.textContent = 'Go Global'; startBtn.disabled = false; }
     if (stopBtn) stopBtn.style.display = 'none';
   }
-  
-  // Smart QR: Points to the best available route
-  updateQRCode(globalUrl || localUrl);
+
+  // QR points to best available URL
+  updateQRCode(baseUrl);
 }
 
 function updateQRCode(url) {
@@ -681,6 +853,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   window.timerAPI.onConfigUpdate((config) => {
     appConfig = config;
     renderCustomPresets();
+    renderMessages();
     updateConnectivityUI(config);
 
     // Re-render state to ensure all UI settings (toggles, milestones) sync
@@ -690,6 +863,23 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (window.timerAPI.getDevices) {
       window.timerAPI.getDevices().then(window.renderDevices);
     }
+  });
+
+  // Message Creation
+  document.getElementById('addMessageBtn')?.addEventListener('click', () => {
+    const messages = [...(appConfig.settings.messages || [])];
+    const newMessage = {
+      id: Date.now().toString(),
+      text: "New Production Note",
+      color: "#ffffff",
+      bold: true,
+      caps: false,
+      flash: false,
+      focus: false
+    };
+    messages.push(newMessage);
+    window.timerAPI.saveSettings({ messages });
+    showToast("Message added to library", "success");
   });
 
   // Handle Tunneling
@@ -730,6 +920,17 @@ window.addEventListener("DOMContentLoaded", async () => {
         showToast("Failed to refresh PIN", "error");
       }
     }
+  });
+
+  // Security Toggles (Immediate save)
+  document.getElementById('requirePinController')?.addEventListener('change', (e) => {
+    window.timerAPI.saveSettings({ requirePinController: e.target.checked });
+    showToast(`Controller PIN ${e.target.checked ? 'Enabled' : 'Disabled'}`, "info");
+  });
+
+  document.getElementById('requirePinProjector')?.addEventListener('change', (e) => {
+    window.timerAPI.saveSettings({ requirePinProjector: e.target.checked });
+    showToast(`Projector PIN ${e.target.checked ? 'Enabled' : 'Disabled'}`, "info");
   });
 
   window.renderDevices = (devices) => {

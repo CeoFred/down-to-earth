@@ -15,12 +15,15 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (isRemote) {
     const socket = io();
     window.timerAPI = {
-      getState: () => new Promise(resolve => socket.emit('timer:getState', resolve)),
+      getState: () => new Promise(resolve => {
+        socket.emit('timer:getState');
+        socket.once('timer:state', resolve);
+      }),
       onUpdate: (cb) => socket.on('timer:update', cb),
       onTitle: (cb) => socket.on('timer:title', cb),
       onNotes: (cb) => socket.on('timer:notes', cb),
       onConfigUpdate: (cb) => socket.on('timer:configUpdate', cb),
-      submitPin: (pin) => socket.emit('register', { pin }),
+      submitPin: (pin) => socket.emit('register', { pin, clientType: 'projector', deviceId: getDeviceId(), userAgent: navigator.userAgent }),
       onAuth: (cb) => socket.on('registered', (res) => cb(res.success)),
       onFlash: (cb) => socket.on('timer:flash', cb)
     };
@@ -28,10 +31,6 @@ window.addEventListener('DOMContentLoaded', async () => {
     const overlay = document.getElementById('remoteAuthOverlay');
     const pinInput = document.getElementById('remotePinInput');
     const submitBtn = document.getElementById('authSubmitBtn');
-
-    if (overlay) overlay.style.display = 'flex';
-    submitBtn.onclick = () => window.timerAPI.submitPin(pinInput.value);
-    pinInput.onkeypress = (e) => { if (e.key === 'Enter') window.timerAPI.submitPin(pinInput.value); };
 
     const getDeviceId = () => {
       let id = localStorage.getItem('remote_device_id');
@@ -43,29 +42,42 @@ window.addEventListener('DOMContentLoaded', async () => {
     };
 
     socket.on('connect', () => {
-      socket.emit('timer:identify', { 
-        deviceId: getDeviceId(), 
-        userAgent: navigator.userAgent 
-      });
+      socket.emit('timer:identify', { deviceId: getDeviceId(), userAgent: navigator.userAgent });
+      socket.emit('timer:getState');
+    });
+
+    if (submitBtn) {
+      submitBtn.onclick = () => window.timerAPI.submitPin(pinInput.value);
+    }
+    if (pinInput) {
+      pinInput.onkeypress = (e) => { if (e.key === 'Enter') window.timerAPI.submitPin(pinInput.value); };
+    }
+
+    // Check PIN requirement from initial state
+    socket.once('timer:state', (state) => {
+      const pinRequired = state?.config?.settings?.requirePinProjector !== false;
+      if (!pinRequired) {
+        // Auto-authenticate — no PIN needed
+        socket.emit('register', { pin: '', clientType: 'projector', deviceId: getDeviceId(), userAgent: navigator.userAgent });
+        return;
+      }
+      // Show PIN overlay
+      if (overlay) overlay.style.display = 'flex';
     });
 
     window.timerAPI.onAuth((success) => {
       if (success) {
-        overlay.style.display = 'none';
+        if (overlay) overlay.style.display = 'none';
         initProjector();
       } else {
-        pinInput.value = "";
-        pinInput.style.borderColor = "#ef4444";
-        setTimeout(() => pinInput.style.borderColor = "rgba(255, 255, 255, 0.1)", 1000);
+        if (overlay) overlay.style.display = 'flex';
+        if (pinInput) {
+          pinInput.value = '';
+          pinInput.style.borderColor = '#ef4444';
+          setTimeout(() => pinInput.style.borderColor = 'rgba(255, 255, 255, 0.1)', 1000);
+        }
       }
     });
-
-    // Check if already authenticated (for refresh)
-    const state = await window.timerAPI.getState();
-    if (state && !state.authRequired) {
-      if (overlay) overlay.style.display = 'none';
-      initProjector();
-    }
   } else {
     initProjector();
   }
@@ -220,9 +232,33 @@ window.addEventListener('DOMContentLoaded', async () => {
       const config = (window.lastConfig || state.config);
       const vis = config?.settings?.visibility || { showNotes: true };
 
-      if (notes && notes.trim() !== "" && vis.showNotes) {
-        content.textContent = notes;
-        notesContainer.classList.add('active');
+      // Reset rich styles
+      content.className = '';
+      content.style.color = '';
+      document.body.classList.remove('focus-notes');
+
+      if (notes && vis.showNotes) {
+        let text = "";
+        
+        if (typeof notes === 'object') {
+          // Rich Message Object
+          text = notes.text || "";
+          if (notes.bold) content.classList.add('msg-bold');
+          if (notes.caps) content.classList.add('msg-caps');
+          if (notes.flash) content.classList.add('msg-flash');
+          if (notes.focus) document.body.classList.add('focus-notes');
+          if (notes.color) content.style.color = notes.color;
+        } else {
+          // Legacy String Handle
+          text = notes;
+        }
+
+        if (text.trim() !== "") {
+          content.textContent = text;
+          notesContainer.classList.add('active');
+        } else {
+          notesContainer.classList.remove('active');
+        }
       } else {
         notesContainer.classList.remove('active');
       }

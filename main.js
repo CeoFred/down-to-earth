@@ -72,7 +72,11 @@ let config = {
       soundOnRed: true
     },
     securityPin: Math.floor(1000 + Math.random() * 9000).toString(), // Generate random 4-digit PIN
-    blockedDevices: []
+    requirePinController: true,  // Whether remote controllers need PIN auth
+    requirePinProjector: true,   // Whether remote projectors need PIN auth
+    blockedDevices: [],
+    messages: [],                // Library of pre-written stage messages
+    activeMessageId: null        // ID of the currently active message (if any)
   },
   localUrl: "http://" + networkAddress() + ":8321"
 };
@@ -132,7 +136,9 @@ expressApp.get('/projector', (req, res) => {
 });
 
 function broadcastDevices() {
-  mainWindow?.webContents.send('timer:devicesUpdate', Array.from(remoteDevices.values()));
+  const deviceList = Array.from(remoteDevices.values());
+  mainWindow?.webContents.send('timer:devicesUpdate', deviceList);
+  io.emit('timer:devicesUpdate', deviceList);
 }
 
 io.on('connection', (socket) => {
@@ -156,23 +162,29 @@ io.on('connection', (socket) => {
     customNotes, config 
   });
 
-  socket.on('register', ({ pin, deviceId, userAgent }) => {
+  socket.on('register', ({ pin, deviceId, userAgent, clientType }) => {
     // 1. Mandatory Identity Update (Even for blocked devices)
     const dev = remoteDevices.get(socket.id);
     if (dev) {
       dev.deviceId = deviceId || dev.deviceId;
       dev.userAgent = userAgent || dev.userAgent;
+      dev.clientType = clientType || 'controller';
       remoteDevices.set(socket.id, dev);
     }
 
     // 2. Blacklist Check
     if (config.settings.blockedDevices?.includes(deviceId)) {
-      broadcastDevices(); // UI sync
+      broadcastDevices();
       return socket.emit('registered', { success: false, error: 'Access Blocked' });
     }
 
-    // 3. Authentication
-    const isSuccess = (pin === config.settings.securityPin);
+    // 3. Authentication — check if PIN is required for this client type
+    const isController = (clientType !== 'projector');
+    const pinRequired = isController
+      ? config.settings.requirePinController
+      : config.settings.requirePinProjector;
+
+    const isSuccess = !pinRequired || (pin === config.settings.securityPin);
     if (isSuccess) {
       authState = true;
       socket.emit('registered', { success: true });
@@ -275,6 +287,85 @@ io.on('connection', (socket) => {
     customNotes = notes || "";
     broadcast("timer:notes", { notes: customNotes });
   });
+
+  socket.on('timer:getDevices', () => {
+    if (!authState) return socket.emit('auth:error', 'Authentication required');
+    socket.emit('timer:devicesUpdate', Array.from(remoteDevices.values()));
+  });
+
+  socket.on('timer:blockDevice', ({ socketId, deviceId }) => {
+    if (!authState) return socket.emit('auth:error', 'Authentication required');
+    if (deviceId && !config.settings.blockedDevices.includes(deviceId)) {
+      config.settings.blockedDevices.push(deviceId);
+      saveConfig();
+    }
+    const targetSocket = io.sockets.sockets.get(socketId);
+    if (targetSocket) {
+      targetSocket.emit('auth:error', 'Access revoked by production director');
+      targetSocket.disconnect(true);
+    }
+    broadcast('timer:configUpdate', config);
+    broadcastDevices();
+  });
+
+  socket.on('timer:unblockDevice', (deviceId) => {
+    if (!authState) return socket.emit('auth:error', 'Authentication required');
+    if (deviceId) {
+      config.settings.blockedDevices = config.settings.blockedDevices.filter(id => id !== deviceId);
+      saveConfig();
+      broadcast('timer:configUpdate', config);
+      broadcastDevices();
+    }
+  });
+
+  socket.on('timer:startTunnel', async () => {
+    if (!authState) return socket.emit('auth:error', 'Authentication required');
+    if (activeTunnelProcess) {
+      return socket.emit('timer:tunnelResult', { success: true, url: config.tunnelUrl });
+    }
+    try {
+      activeTunnelProcess = spawn('npx', ['-y', 'tunnelmole', '8321']);
+      let tunnelUrl = null;
+      activeTunnelProcess.stdout.on('data', (data) => {
+        const output = data.toString();
+        const match = output.match(/https:\/\/[a-z0-9-]+\.tunnelmole\.net/);
+        if (match && !tunnelUrl) {
+          tunnelUrl = match[0];
+          config.tunnelUrl = tunnelUrl;
+          broadcast('timer:configUpdate', config);
+          saveConfig();
+          socket.emit('timer:tunnelResult', { success: true, url: tunnelUrl });
+        }
+      });
+      activeTunnelProcess.on('close', () => {
+        activeTunnelProcess = null;
+        config.tunnelUrl = null;
+        broadcast('timer:configUpdate', config);
+        saveConfig();
+      });
+      setTimeout(() => {
+        if (!tunnelUrl) {
+          if (activeTunnelProcess) activeTunnelProcess.kill();
+          socket.emit('timer:tunnelResult', { success: false, error: 'Tunnel timeout' });
+        }
+      }, 20000);
+    } catch (err) {
+      socket.emit('timer:tunnelResult', { success: false, error: err.message });
+    }
+  });
+
+  socket.on('timer:stopTunnel', () => {
+    if (!authState) return socket.emit('auth:error', 'Authentication required');
+    if (activeTunnelProcess) {
+      activeTunnelProcess.kill();
+      activeTunnelProcess = null;
+      config.tunnelUrl = null;
+      broadcast('timer:configUpdate', config);
+      saveConfig();
+    }
+    socket.emit('timer:tunnelStopped');
+  });
+
 });
 
 server.listen(port, () => {
@@ -289,7 +380,7 @@ function createMainWindow() {
     fullscreen: true,
     frame: true,
     autoHideMenuBar: true,
-    backgroundColor: '#000000',
+    backgroundColor: '#1414147d',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -618,19 +709,29 @@ ipcMain.handle('timer:refreshPin', () => {
   config.settings.securityPin = newPin;
   saveConfig();
 
-  // 2. Disconnect all remote participants
+  // 2. Selectively disconnect remote participants
   io.sockets.sockets.forEach((socket) => {
-    // We don't need to disconnect the host, but remote clients should be forced to re-auth
-    socket.emit('auth:error', 'Security code has been refreshed. Please re-authenticate.');
-    socket.disconnect(true);
+    const dev = remoteDevices.get(socket.id);
+    if (!dev) return;
+
+    // Check if security PIN is required for this specific device type
+    const isController = dev.clientType === 'controller';
+    const pinRequired = isController
+      ? config.settings.requirePinController
+      : config.settings.requirePinProjector;
+
+    if (pinRequired) {
+      // Security code has been refreshed, force them to re-auth
+      socket.emit('auth:error', 'Security code has been refreshed. Please re-authenticate.');
+      socket.disconnect(true);
+      remoteDevices.delete(socket.id);
+    }
+    // If not required, leave them connected and authenticated
   });
 
-  // 3. Clear remote registry
-  remoteDevices.clear();
-
-  // 4. Broadcast the new config to local windows (to show the new PIN)
+  // 3. Broadcast the new config to local windows (to show the new PIN)
   broadcast('timer:configUpdate', config);
-  mainWindow?.webContents.send('timer:devicesUpdate', []);
+  broadcastDevices();
 
   console.log(`-------------------------------------------`);
   console.log(`SECURITY PIN REFRESHED: ${newPin}`);
