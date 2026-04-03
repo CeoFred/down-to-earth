@@ -141,6 +141,13 @@
         text-align: center;
         color: var(--text);
         text-shadow: 0 0 30px rgba(59, 130, 246, 0.3);
+        line-height: 1;
+      }
+
+      .timer-colon {
+        display: inline-block;
+        transform: translateY(-0.08em); /* Nudge up visually */
+        margin: 0 2px;
       }
 
       .tab-nav {
@@ -269,6 +276,36 @@
       .playlist-time-input::-webkit-inner-spin-button {
         display: none;
       }
+
+      /* MODAL STYLES */
+      .modal-overlay {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        background: rgba(15, 23, 42, 0.85);
+        backdrop-filter: blur(8px);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 2000;
+        padding: 20px;
+        animation: fadeIn 0.2s ease;
+      }
+
+      .modal-content {
+        background: #1e293b;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 24px;
+        width: 100%;
+        max-width: 400px;
+        padding: 28px;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        transform: translateY(0);
+        animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
       .setting-row {
         display: flex;
@@ -723,14 +760,7 @@
             <button id="resetBtn" class="btn btn-ghost">Reset</button>
           </div>
 
-          <div class="controls-row">
-            <button id="savePresetBtn" class="btn btn-ghost" style="font-size: 11px; border-style: solid; border-width: 1px;">
-              💾 Save as Preset
-            </button>
-            <button id="addToPlaylistBtn" class="btn btn-ghost" style="font-size: 11px; border-style: solid; border-width: 1px;">
-              ➕ Add to Playlist
-            </button>
-          </div>
+         
 
           <!-- Integrated Presets -->
           <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, 0.05);">
@@ -746,14 +776,7 @@
               <button class="preset-btn" data-minutes="45">45m</button>
               <button class="preset-btn" data-minutes="60">60m</button>
             </div>
-            
-            <div class="field-label" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
-              <span>Library</span>
-              <span style="font-size: 9px; opacity: 0.5; text-transform: none; font-weight: normal;">Your custom saves</span>
-            </div>
-            <div id="customPresetsContainer" class="presets-row">
-              <div style="font-size: 11px; color: var(--muted); width: 100%; text-align: center;">No custom presets yet.</div>
-            </div>
+          
           </div>
         </div>
 
@@ -779,7 +802,11 @@
 
         <!-- PLAYLIST TAB -->
         <div id="playlistTab" class="tab-content">
-          <div id="playlistContainer" style="min-height: 120px; max-height: 300px; overflow-y: auto; margin-bottom: 16px;">
+          <button id="addTimerBtn" class="btn btn-secondary" style="width: 100%; height: 48px; border-radius: 14px; margin-bottom: 20px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <span style="font-size: 18px; font-weight: 300;">+</span> Add Playlist Item
+          </button>
+
+          <div id="playlistContainer" style="min-height: 120px; max-height: 380px; overflow-y: auto; margin-bottom: 20px; padding-right: 4px;">
             <div style="text-align: center; color: var(--muted); padding-top: 40px; font-size: 12px;">
               Playlist is empty. Add timers to get started.
             </div>
@@ -1191,5 +1218,43 @@
         <button id="authSubmitBtn" class="btn btn-primary" style="width: 100%; padding: 16px; font-weight: 800; border-radius: 16px; box-shadow: 0 10px 30px rgba(59, 130, 246, 0.4);">Unlock Deck</button>
       </div>
     </div>
-  </body>
+    </div>
+  </div>
+
+  <!-- ADD PLAYLIST ITEM MODAL -->
+  <div id="playlistModal" class="modal-overlay">
+    <div class="modal-content">
+      <div style="font-size: 18px; font-weight: 800; color: #fff; margin-bottom: 8px;">Add New Timer</div>
+      <div style="font-size: 12px; color: var(--muted); margin-bottom: 24px;">Prepare a scheduled session for the lineup.</div>
+
+      <div class="field" style="margin-bottom: 20px;">
+        <label class="field-label">Session Title</label>
+        <input type="text" id="modalTitle" class="field-input" placeholder="e.g., Keynote Presentation" style="padding: 12px;" />
+      </div>
+
+      <div class="field" style="margin-bottom: 20px;">
+        <label class="field-label">Production Notes</label>
+        <textarea id="modalNotes" class="field-input" placeholder="Production cues for the talent..." rows="3" style="padding: 12px; min-height: 80px; resize: none; font-size: 13px; line-height: 1.5;"></textarea>
+      </div>
+
+      <div class="inputs-row" style="margin-bottom: 32px;">
+        <div class="field">
+          <label class="field-label">Minutes</label>
+          <input type="number" id="modalMinutes" class="field-input" value="10" min="0" style="padding: 12px;" />
+        </div>
+        <div class="field">
+          <label class="field-label">Seconds</label>
+          <input type="number" id="modalSeconds" class="field-input" value="0" min="0" max="59" style="padding: 12px;" />
+        </div>
+      </div>
+
+      <div class="controls-row">
+        <button id="modalCancelBtn" class="btn btn-ghost" style="flex: 1;">Cancel</button>
+        <button id="modalSaveBtn" class="btn btn-primary" style="flex: 2;">💾 Save to Playlist</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
 </html>

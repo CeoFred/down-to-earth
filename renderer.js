@@ -384,6 +384,13 @@ function formatTime(ms) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+function formatTimeHTML(ms) {
+  const totalSeconds = Math.floor(Math.abs(ms) / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}<span class="timer-colon">:</span>${String(seconds).padStart(2, "0")}`;
+}
+
 function renderCustomPresets() {
   const container = document.getElementById('customPresetsContainer');
   if (!container) return;
@@ -689,6 +696,7 @@ function renderPlaylist() {
               onkeydown="if(event.key==='Enter'){event.preventDefault(); this.blur();}"
               style="outline:none; cursor:text; min-width:20px; font-weight:700; color:#fff;"
             >${item.title || 'Untitled Session'}</span>
+            ${item.notes ? `<span title="${item.notes.replace(/"/g, '&quot;')}" style="font-size:10px; opacity:0.6; cursor:help;">📝</span>` : ''}
           </div>
           <div class="time" style="display:flex; align-items:center; gap:4px; margin-top:2px;">
             <input type="number" class="playlist-time-input" value="${item.minutes}" onchange="window.updatePlaylistTime(${index}, this.value, ${item.seconds})">
@@ -762,6 +770,7 @@ window.startPlaylistAt = (index) => {
     }
 
     window.timerAPI.setTitle(item.title);
+    window.timerAPI.setNotes(item.notes || "");
     window.timerAPI.start({ ms: (item.minutes * 60 + item.seconds) * 1000, wrapUp });
     renderPlaylist();
     // Speak title if enabled
@@ -933,12 +942,12 @@ window.renderState = function(state) {
 
   if (isOvertime) {
     label.style.display = "none";
-    display.textContent = `-${formatTime(overtimeMs)}`;
+    display.innerHTML = `<span style="font-size: 0.8em; vertical-align: middle; margin-right: 0.1em; opacity: 0.8;">-</span>${formatTimeHTML(overtimeMs)}`;
     display.style.color = "var(--danger)";
   } else {
     label.style.display = "block";
     label.textContent = currentState.customTitle || "Time Remaining";
-    display.textContent = formatTime(remainingMs);
+    display.innerHTML = formatTimeHTML(remainingMs);
     display.style.color = "var(--text)";
   }
 
@@ -1063,6 +1072,58 @@ function updateQRCode(url) {
 
 /* ---------------- EVENTS ---------------- */
 window.addEventListener("DOMContentLoaded", async () => {
+  // Playlist Modal Reference & Logic
+  const playlistModal = document.getElementById('playlistModal');
+  const addTimerBtn = document.getElementById('addTimerBtn');
+  const modalCancelBtn = document.getElementById('modalCancelBtn');
+  const modalSaveBtn = document.getElementById('modalSaveBtn');
+
+  if (addTimerBtn && playlistModal) {
+    addTimerBtn.addEventListener('click', () => {
+      playlistModal.style.display = 'flex';
+      const modalTitleInput = document.getElementById('modalTitle');
+      if (modalTitleInput) modalTitleInput.focus();
+    });
+
+    const closePlaylistModal = () => {
+      playlistModal.style.display = 'none';
+      const fields = ['modalTitle', 'modalNotes', 'modalMinutes', 'modalSeconds'];
+      fields.forEach(f => {
+        const el = document.getElementById(f);
+        if (el) el.value = (f === 'modalMinutes') ? '10' : (f === 'modalSeconds' ? '0' : '');
+      });
+    };
+
+    if (modalCancelBtn) modalCancelBtn.addEventListener('click', closePlaylistModal);
+
+    if (modalSaveBtn) {
+      modalSaveBtn.addEventListener('click', () => {
+        const titleInput = document.getElementById('modalTitle');
+        const notesInput = document.getElementById('modalNotes');
+        const minsInput = document.getElementById('modalMinutes');
+        const secsInput = document.getElementById('modalSeconds');
+
+        const title = titleInput.value.trim() || "Unnamed Session";
+        const notes = notesInput.value.trim();
+        const minutes = parseInt(minsInput.value) || 0;
+        const seconds = parseInt(secsInput.value) || 0;
+
+        const newItem = { title, notes, minutes, seconds };
+        playlistQueue.push(newItem);
+        renderPlaylist();
+        closePlaylistModal();
+        showToast(`Added "${title}" to Playlist`, "success");
+      });
+    }
+
+    // Close on Escape
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && playlistModal.style.display === 'flex') {
+        closePlaylistModal();
+      }
+    });
+  }
+
   // Tabs
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1071,6 +1132,45 @@ window.addEventListener("DOMContentLoaded", async () => {
       document.getElementById(`${btn.dataset.tab}Tab`).classList.add('active');
     });
   });
+
+  // Playlist Navigation Controls
+  const prevBtn = document.getElementById('prevBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  const clearPlaylistBtn = document.getElementById('clearPlaylistBtn');
+
+  if (prevBtn) {
+    prevBtn.addEventListener('click', () => {
+      if (currentPlaylistIndex > 0) {
+        window.startPlaylistAt(currentPlaylistIndex - 1);
+      } else {
+        showToast("Already at starting item", "info");
+      }
+    });
+  }
+
+  if (nextBtn) {
+    nextBtn.addEventListener('click', () => {
+      if (currentPlaylistIndex < playlistQueue.length - 1) {
+        window.startPlaylistAt(currentPlaylistIndex + 1);
+      } else {
+        showToast("End of playlist reached", "info");
+      }
+    });
+  }
+
+  if (clearPlaylistBtn) {
+    clearPlaylistBtn.addEventListener('click', () => {
+      if (playlistQueue.length === 0) return;
+      if (confirm("Clear the entire playlist lineup?")) {
+        playlistQueue = [];
+        currentPlaylistIndex = -1;
+        window.timerAPI.reset();
+        window.timerAPI.setNotes("");
+        renderPlaylist();
+        showToast("Playlist Lineup Cleared", "warning");
+      }
+    });
+  }
 
   // Timeline Initialization
   initTimeline();
@@ -1502,6 +1602,8 @@ window.addEventListener("DOMContentLoaded", async () => {
       showToast("Failed to copy link", "error");
     }
   };
+
+
 
   // Copy URL logic (Existing Header)
   const copyBtn = document.getElementById('copyUrlBtn');

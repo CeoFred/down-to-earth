@@ -9,6 +9,17 @@ function formatTime(ms) {
   )}`;
 }
 
+function formatTimeHTML(ms) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${String(minutes).padStart(2, "0")}<span class="timer-colon">:</span>${String(seconds).padStart(
+    2,
+    "0"
+  )}`;
+}
+
 window.addEventListener('DOMContentLoaded', async () => {
   const isRemote = (typeof window.timerAPI === 'undefined');
   
@@ -164,7 +175,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         if (timerStack) timerStack.style.display = vis.showTimer ? 'flex' : 'none';
         label.style.display = 'none';
         timeDisplay.style.display = vis.showTimer ? 'block' : 'none';
-        timeDisplay.textContent = `-${formatTime(overtimeMs)}`;
+        timeDisplay.innerHTML = `<span style="font-size: 0.8em; vertical-align: middle; margin-right: 0.1em; opacity: 0.8;">-</span>${formatTimeHTML(overtimeMs)}`;
         timeDisplay.classList.add('overtime');
         timeDisplay.classList.remove('pulsing');
         
@@ -183,7 +194,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         label.style.display = 'block';
         label.textContent = '';
         timeDisplay.style.display = vis.showTimer ? 'block' : 'none';
-        timeDisplay.textContent = formatTime(remainingMs);
+        timeDisplay.innerHTML = formatTimeHTML(remainingMs);
         timeDisplay.classList.remove('overtime');
         
         document.body.classList.remove('shake');
