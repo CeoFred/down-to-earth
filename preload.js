@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('timerAPI', {
   pause: () => ipcRenderer.invoke('timer:pause'),
   reset: () => ipcRenderer.invoke('timer:reset'),
   resume: () => ipcRenderer.invoke('timer:resume'),
+  seek: (ms) => ipcRenderer.invoke('timer:seek', ms),
   setTitle: (title) => ipcRenderer.invoke("timer:setTitle", title),
   onTitle: (cb) => ipcRenderer.on("timer:title", (_e, data) => cb(data)),
   getState: () => ipcRenderer.invoke('timer:getState'),

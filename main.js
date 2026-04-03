@@ -231,6 +231,11 @@ io.on('connection', (socket) => {
     resetTimer();
   });
 
+  socket.on('timer:seek', (ms) => {
+    if (!authState) return socket.emit('auth:error', 'Authentication required');
+    seekTimer(ms);
+  });
+
   socket.on('timer:setTitle', (title) => {
     if (!authState) return socket.emit('auth:error', 'Authentication required');
     customTitle = title || "";
@@ -557,6 +562,19 @@ function resetTimer() {
   broadcast('timer:update', { remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused });
 }
 
+function seekTimer(ms) {
+  if (ms <= 0) {
+    remainingMs = 0;
+    isOvertime = true;
+    overtimeMs = Math.abs(ms);
+  } else {
+    remainingMs = ms;
+    isOvertime = false;
+    overtimeMs = 0;
+  }
+  broadcast('timer:update', { remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused });
+}
+
 ipcMain.handle('timer:start', (event, { ms, wrapUp }) => {
   startTimer(ms, wrapUp);
 });
@@ -571,6 +589,10 @@ ipcMain.handle('timer:resume', () => {
 
 ipcMain.handle('timer:reset', () => {
   resetTimer();
+});
+
+ipcMain.handle('timer:seek', (event, ms) => {
+  seekTimer(ms);
 });
 
 ipcMain.handle('timer:flash', () => {

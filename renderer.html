@@ -506,7 +506,7 @@
         box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
       }
 
-      @media (max-width: 480px) {
+        @media (max-width: 480px) {
         body { padding: 8px; }
         .card { padding: 18px; border-radius: 20px; }
         .inputs-row { flex-direction: column; gap: 12px; }
@@ -515,6 +515,92 @@
         .timer-display { padding: 16px; }
         .presets-row { gap: 8px; }
         .preset-btn { min-width: calc(33.33% - 6px); }
+      }
+
+      /* TIMELINE STYLES */
+      .timeline-wrapper {
+        margin: 0 0 16px 0;
+        padding: 0;
+        display: block;
+        opacity: 1;
+        transition: all 0.3s ease;
+      }
+
+      .timeline-container {
+        position: relative;
+        height: 52px;
+        background: rgba(15, 23, 42, 0.8);
+        border-radius: 0;
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        overflow: hidden;
+        cursor: pointer;
+        user-select: none;
+        box-shadow: inset 0 2px 10px rgba(0,0,0,0.3);
+      }
+
+      .timeline-segments {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        pointer-events: none;
+      }
+
+      .segment {
+        height: 100%;
+        border-bottom: 4px solid transparent;
+        transition: width 0.3s ease;
+      }
+
+      .segment-green { background: rgba(34, 197, 94, 0.08); border-color: #22c55e; }
+      .segment-orange { background: rgba(245, 158, 11, 0.08); border-color: #f59e0b; }
+      .segment-red { background: rgba(239, 68, 68, 0.08); border-color: #ef4444; }
+
+      .timeline-markers {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+      }
+
+      .marker {
+        position: absolute;
+        top: 0;
+        height: 100%;
+        border-left: 1px solid rgba(148, 163, 184, 0.1);
+        padding: 6px 0 0 6px;
+        font-size: 10px;
+        font-weight: 600;
+        color: rgba(148, 163, 184, 0.6);
+        font-family: ui-monospace, monospace;
+        pointer-events: none;
+      }
+
+      .playhead {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 2px;
+        height: 100%;
+        background: #ef4444;
+        z-index: 10;
+        pointer-events: none;
+        box-shadow: 0 0 15px rgba(239, 68, 68, 0.6);
+      }
+
+      .playhead::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: -6px;
+        width: 14px;
+        height: 10px;
+        background: #ef4444;
+        clip-path: polygon(0% 0%, 100% 0%, 50% 100%);
       }
     </style>
   </head>
@@ -540,6 +626,16 @@
 
         <!-- TIMER TAB -->
         <div id="timerTab" class="tab-content active">
+          
+          <!-- TIMELINE COMPONENT -->
+          <div id="timelineWrapper" class="timeline-wrapper">
+            <div id="timelineContainer" class="timeline-container">
+              <div id="timelineSegments" class="timeline-segments"></div>
+              <div id="timelineMarkers" class="timeline-markers"></div>
+              <div id="playhead" class="playhead"></div>
+            </div>
+          </div>
+
           <div class="timer-display">
             <div class="timer-label" id="timerLabel">Time Remaining</div>
             <div class="timer-value" id="display">00:00</div>

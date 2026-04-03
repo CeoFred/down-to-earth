@@ -149,6 +149,7 @@ if (typeof window.timerAPI === 'undefined') {
     pause: () => socket.emit('timer:pause'),
     reset: () => socket.emit('timer:reset'),
     resume: () => socket.emit('timer:resume'),
+    seek: (ms) => socket.emit('timer:seek', ms),
     setTitle: (title) => socket.emit('timer:setTitle', title),
     getState: () => new Promise((resolve) => {
       socket.emit('timer:getState');
@@ -371,7 +372,7 @@ function playAlarm() {
 }
 
 /* ---------------- CORE TIMER & WORKFLOW LOGIC ---------------- */
-let currentState = { remainingMs: 0, isRunning: false, isPaused: false, isOvertime: false };
+let currentState = { remainingMs: 0, totalMs: 0, isRunning: false, isPaused: false, isOvertime: false };
 let appConfig = { customPresets: [], playlists: [], settings: {} };
 let playlistQueue = [];
 let currentPlaylistIndex = -1;
@@ -402,6 +403,136 @@ function renderCustomPresets() {
       <button onclick="deletePreset('${p.id}')" style="position: absolute; top: -5px; right: -5px; width: 18px; height: 18px; border-radius: 50%; background: #ef4444; border: none; color: white; font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.3); z-index: 10;">×</button>
     </div>
   `).join('');
+}
+
+/* ---------------- TIMELINE LOGIC ---------------- */
+let isScrubbing = false;
+
+function initTimeline() {
+  const wrapper = document.getElementById('timelineWrapper');
+  const container = document.getElementById('timelineContainer');
+  if (!container) return;
+
+  const handleScrub = (e) => {
+    if (!currentState.totalMs || currentState.totalMs <= 0) return;
+    
+    const rect = container.getBoundingClientRect();
+    const x = (e.clientX || (e.touches && e.touches[0].clientX)) - rect.left;
+    let progress = Math.max(0, Math.min(1, x / rect.width));
+    
+    // In our countdown, 0% progress (left) is totalMs, 100% progress (right) is 0ms
+    const targetMs = Math.round(currentState.totalMs * (1 - progress));
+    
+    // Optimistic UI update
+    const playhead = document.getElementById('playhead');
+    if (playhead) playhead.style.left = `${progress * 100}%`;
+    
+    window.timerAPI.seek(targetMs);
+  };
+
+  container.addEventListener('mousedown', (e) => {
+    isScrubbing = true;
+    handleScrub(e);
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (isScrubbing) handleScrub(e);
+  });
+
+  window.addEventListener('mouseup', () => {
+    isScrubbing = false;
+  });
+
+  // Touch support for tablets/phones
+  container.addEventListener('touchstart', (e) => {
+    isScrubbing = true;
+    handleScrub(e);
+  }, { passive: false });
+
+  window.addEventListener('touchmove', (e) => {
+    if (isScrubbing) {
+      e.preventDefault();
+      handleScrub(e);
+    }
+  }, { passive: false });
+
+  // Standard Inputs Listener (for live timeline preview)
+  const previewUpdate = () => {
+    if (!currentState.isRunning && !currentState.isPaused) {
+      const mins = parseInt(document.getElementById('minutes').value) || 0;
+      const secs = parseInt(document.getElementById('seconds').value) || 0;
+      const totalMs = (mins * 60 + secs) * 1000;
+      if (totalMs > 0 && window.lastTotalMs !== totalMs) {
+        renderTimelineMarkers(totalMs, appConfig.settings.wrapUp);
+        window.lastTotalMs = totalMs;
+      }
+    }
+  };
+  document.getElementById('minutes').addEventListener('input', previewUpdate);
+  document.getElementById('seconds').addEventListener('input', previewUpdate);
+
+  // Initial markers
+  const initialMins = parseInt(document.getElementById('minutes').value) || 10;
+  const initialSecs = parseInt(document.getElementById('seconds').value) || 0;
+  renderTimelineMarkers((initialMins * 60 + initialSecs) * 1000, appConfig.settings.wrapUp);
+}
+
+function renderTimelineMarkers(totalMs, wrapUp) {
+  const markersContainer = document.getElementById('timelineMarkers');
+  const segmentsContainer = document.getElementById('timelineSegments');
+  if (!markersContainer || !segmentsContainer) return;
+
+  markersContainer.innerHTML = '';
+  segmentsContainer.innerHTML = '';
+
+  if (!totalMs || totalMs <= 0) return;
+
+  const totalSecs = totalMs / 1000;
+  
+  // 1. Render Segments (Green, Orange, Red)
+  const yellowSec = (wrapUp?.yellowMs || 60000) / 1000;
+  const redSec = (wrapUp?.redMs || 30000) / 1000;
+
+  // Green segment (from start to yellow)
+  if (totalSecs > yellowSec) {
+    const greenWidth = ((totalSecs - yellowSec) / totalSecs) * 100;
+    const div = document.createElement('div');
+    div.className = 'segment segment-green';
+    div.style.width = `${greenWidth}%`;
+    segmentsContainer.appendChild(div);
+  }
+
+  // Orange segment (from yellow to red)
+  if (totalSecs > redSec) {
+    const orangeStart = Math.min(totalSecs, yellowSec);
+    const orangeSecs = orangeStart - redSec;
+    const orangeWidth = (orangeSecs / totalSecs) * 100;
+    const div = document.createElement('div');
+    div.className = 'segment segment-orange';
+    div.style.width = `${orangeWidth}%`;
+    segmentsContainer.appendChild(div);
+  }
+
+  // Red segment (from red to 0)
+  const redStart = Math.min(totalSecs, redSec);
+  const redWidth = (redStart / totalSecs) * 100;
+  const div = document.createElement('div');
+  div.className = 'segment segment-red';
+  div.style.width = `${redWidth}%`;
+  segmentsContainer.appendChild(div);
+
+  // 2. Render Markers (Dynamic labels)
+  const interval = totalSecs > 600 ? 300 : 60; // 5 mins for long timers, 1 min for short
+  for (let s = 0; s <= totalSecs; s += interval) {
+    const pos = (1 - (s / totalSecs)) * 100;
+    if (pos < 0 || pos > 100) continue;
+    
+    const div = document.createElement('div');
+    div.className = 'marker';
+    div.style.left = `${pos}%`;
+    div.textContent = formatTime(s * 1000);
+    markersContainer.appendChild(div);
+  }
 }
 
 window.loadTimerPreset = (mins, secs, title) => {
@@ -613,7 +744,8 @@ window.removeFromPlaylist = (index) => {
 };
 
 window.renderState = function(state) {
-  const { remainingMs, isRunning, isPaused, isOvertime, overtimeMs, config } = state;
+  if (!state) return;
+  const { remainingMs, totalMs, isRunning, isPaused, isOvertime, overtimeMs, config } = state;
   currentState = state;
   
   if (config) {
@@ -708,6 +840,39 @@ window.renderState = function(state) {
     }
   }
 
+  // Timeline UI Updates
+  const timelineWrapper = document.getElementById('timelineWrapper');
+  if (timelineWrapper) {
+    // Determine which totalMs to use for the timeline (active session or idle preview)
+    let displayTotalMs = totalMs || 0;
+    
+    if (!isRunning && !isPaused) {
+      const mins = parseInt(document.getElementById('minutes').value) || 0;
+      const secs = parseInt(document.getElementById('seconds').value) || 0;
+      displayTotalMs = (mins * 60 + secs) * 1000;
+    }
+
+    if (displayTotalMs > 0) {
+      if (window.lastTotalMs !== displayTotalMs) {
+        renderTimelineMarkers(displayTotalMs, config?.settings?.wrapUp || appConfig.settings.wrapUp);
+        window.lastTotalMs = displayTotalMs;
+      }
+
+      const playhead = document.getElementById('playhead');
+      if (playhead && !isScrubbing) {
+        let progress = 0;
+        if (isOvertime) {
+          progress = 1; 
+        } else if ((isRunning || isPaused) && totalMs > 0) {
+          progress = 1 - (remainingMs / totalMs);
+        } else {
+          progress = 0; // At start for idle preview
+        }
+        playhead.style.left = `${Math.min(1, Math.max(0, progress)) * 100}%`;
+      }
+    }
+  }
+
   const display = document.getElementById("display");
   const label = document.getElementById("timerLabel");
   const statusPill = document.getElementById("statusPill");
@@ -742,8 +907,12 @@ window.renderState = function(state) {
   // Button States
   const startBtn = document.getElementById("startBtn");
   const pauseBtn = document.getElementById("pauseBtn");
-  // startBtn is now always clickable to allow overriding the current time
-  if (startBtn) startBtn.disabled = false;
+  
+  if (startBtn) {
+    startBtn.disabled = false;
+    startBtn.textContent = (isRunning || isPaused) ? "Restart" : "Start";
+  }
+  
   if (pauseBtn) {
     pauseBtn.disabled = !isRunning && !isPaused;
     pauseBtn.textContent = isPaused ? "Resume" : "Pause";
@@ -833,6 +1002,9 @@ window.addEventListener("DOMContentLoaded", async () => {
       document.getElementById(`${btn.dataset.tab}Tab`).classList.add('active');
     });
   });
+
+  // Timeline Initialization
+  initTimeline();
 
   // Setup
   const state = await window.timerAPI.getState();
