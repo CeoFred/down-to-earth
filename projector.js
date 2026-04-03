@@ -235,13 +235,13 @@ window.addEventListener('DOMContentLoaded', async () => {
       // Reset rich styles
       content.className = '';
       content.style.color = '';
-      document.body.classList.remove('focus-notes');
+      document.body.classList.remove('focus-notes', 'has-notes');
+      content.style.fontSize = ''; // reset to CSS variable
 
       if (notes && vis.showNotes) {
         let text = "";
         
         if (typeof notes === 'object') {
-          // Rich Message Object
           text = notes.text || "";
           if (notes.bold) content.classList.add('msg-bold');
           if (notes.caps) content.classList.add('msg-caps');
@@ -249,18 +249,39 @@ window.addEventListener('DOMContentLoaded', async () => {
           if (notes.focus) document.body.classList.add('focus-notes');
           if (notes.color) content.style.color = notes.color;
         } else {
-          // Legacy String Handle
           text = notes;
         }
 
         if (text.trim() !== "") {
           content.textContent = text;
           notesContainer.classList.add('active');
+          document.body.classList.add('has-notes');
+
+          // Dynamic Scaling (Delayed to allow layout/transitions to finish)
+          setTimeout(() => fitNotesText(content), 50);
         } else {
           notesContainer.classList.remove('active');
         }
       } else {
         notesContainer.classList.remove('active');
+      }
+    }
+
+    function fitNotesText(el) {
+      const parent = el.parentElement;
+      if (!parent) return;
+
+      const maxBoxHeight = parent.offsetHeight;
+      const originalSizeVal = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--notes-size')) || 4.5;
+      const unit = getComputedStyle(document.documentElement).getPropertyValue('--notes-size').includes('vh') ? 'vh' : 'vw';
+      
+      let fontSize = originalSizeVal;
+      el.style.fontSize = fontSize + unit;
+
+      // Incrementally shrink font size until it fits OR hits 1.5vh minimum (very small)
+      while (el.scrollHeight > maxBoxHeight && fontSize > 1.5) {
+        fontSize -= 0.1;
+        el.style.fontSize = fontSize + unit;
       }
     }
 

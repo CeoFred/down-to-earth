@@ -563,7 +563,7 @@ function renderMessages() {
     return `
       <div class="message-card ${isActive ? 'active' : ''}" data-id="${msg.id}">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
-          <input type="text" class="msg-input" value="${msg.text}" placeholder="Type your message..." onchange="updateMessageText('${msg.id}', this.value)">
+          <textarea class="msg-input" placeholder="Type your message..." onchange="updateMessageText('${msg.id}', this.value)" rows="2">${msg.text}</textarea>
           <button onclick="deleteMessage('${msg.id}')" style="background:none; border:none; opacity:0.3; cursor:pointer; font-size:14px; padding:4px;">🗑️</button>
         </div>
         
@@ -663,22 +663,57 @@ function renderPlaylist() {
   if (!container) return;
 
   if (playlistQueue.length === 0) {
-    container.innerHTML = '<div style="text-align: center; color: var(--muted); padding-top: 40px; font-size: 12px;">Playlist is empty.</div>';
+    container.innerHTML = `
+      <div style="text-align: center; color: var(--muted); padding: 40px 20px; font-size: 12px; background: rgba(255,255,255,0.02); border-radius: 12px;">
+        Playlist is empty. Add timers to get started.
+      </div>
+    `;
     return;
   }
 
-  container.innerHTML = playlistQueue.map((item, index) => `
-    <div class="playlist-item ${index === currentPlaylistIndex ? 'active' : ''}" style="${index === currentPlaylistIndex ? 'border-color: var(--accent); background: var(--accent-soft);' : ''}">
-      <div class="info">
-        <div class="title">${item.title || 'Untitled Session'}</div>
-        <div class="time">${item.minutes}m ${item.seconds}s</div>
+  container.innerHTML = playlistQueue.map((item, index) => {
+    const isActive = index === currentPlaylistIndex;
+    const isPaused = currentState?.isPaused;
+    
+    return `
+      <div class="playlist-item ${isActive ? 'active' : ''}" data-index="${index}">
+        ${isActive ? `<div id="playlist-progress-active" class="playlist-progress"></div>` : ''}
+        
+        <div class="info">
+          <div class="title" style="display:flex; align-items:center; gap:8px;">
+            <span style="opacity:0.4; font-size:10px; font-family:var(--font-mono);">${index + 1}.</span>
+            <span 
+              contenteditable="true" 
+              class="playlist-title-edit" 
+              onblur="window.updatePlaylistTitle(${index}, this.innerText)"
+              onkeydown="if(event.key==='Enter'){event.preventDefault(); this.blur();}"
+              style="outline:none; cursor:text; min-width:20px; font-weight:700; color:#fff;"
+            >${item.title || 'Untitled Session'}</span>
+          </div>
+          <div class="time" style="display:flex; align-items:center; gap:4px; margin-top:2px;">
+            <input type="number" class="playlist-time-input" value="${item.minutes}" onchange="window.updatePlaylistTime(${index}, this.value, ${item.seconds})">
+            <span style="font-size:9px; opacity:0.5; font-family:var(--font-mono);">m</span>
+            <input type="number" class="playlist-time-input" value="${item.seconds}" onchange="window.updatePlaylistTime(${index}, ${item.minutes}, this.value)" min="0" max="59">
+            <span style="font-size:9px; opacity:0.5; font-family:var(--font-mono);">s</span>
+          </div>
+        </div>
+        
+        <div class="actions">
+           ${isActive ? `
+             <button onclick="window.timerAPI.pause()" class="btn-icon" style="background:rgba(59,130,246,0.2); border:1px solid rgba(59,130,246,0.3); color:var(--accent); border-radius:8px; width:32px; height:32px; display:flex; align-items:center; justify-content:center; cursor:pointer;" id="playlist-pause-btn">
+               ${isPaused ? '▶' : '⏸'}
+             </button>
+             <button onclick="startPlaylistAt(${index})" class="btn-icon" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#fff; border-radius:8px; width:32px; height:32px; display:flex; align-items:center; justify-content:center; cursor:pointer;" title="Restart">
+               🔄
+             </button>
+           ` : `
+             <button onclick="startPlaylistAt(${index})" style="background:none; border:none; color:var(--accent); cursor:pointer; font-size:18px; padding:4px;">▶</button>
+           `}
+           <button onclick="removeFromPlaylist(${index})" style="background:none; border:none; color:#ef4444; opacity:0.8; cursor:pointer; font-size:18px; padding:4px;" title="Remove">&times;</button>
+        </div>
       </div>
-      <div style="display: flex; gap: 8px;">
-         <span onclick="startPlaylistAt(${index})" style="cursor: pointer; color: var(--accent);">▶</span>
-         <span onclick="removeFromPlaylist(${index})" style="cursor: pointer; opacity: 0.5;">&times;</span>
-      </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 window.applyPreset = (mins, secs, title, ySec = null, rSec = null) => {
@@ -731,16 +766,35 @@ window.startPlaylistAt = (index) => {
     renderPlaylist();
     // Speak title if enabled
     if (appConfig.settings.readPlaylistTitle) speak(item.title);
-    // Switch to Timer tab
-    document.querySelector('[data-tab="timer"]').click();
   }
 };
 
 window.removeFromPlaylist = (index) => {
+  if (currentPlaylistIndex === index) {
+    window.timerAPI.reset();
+    currentPlaylistIndex = -1;
+  } else if (currentPlaylistIndex > index) {
+    currentPlaylistIndex--;
+  }
+
   playlistQueue.splice(index, 1);
-  if (currentPlaylistIndex === index) currentPlaylistIndex = -1;
-  else if (currentPlaylistIndex > index) currentPlaylistIndex--;
   renderPlaylist();
+};
+
+window.updatePlaylistTitle = (index, newTitle) => {
+  if (playlistQueue[index]) {
+    playlistQueue[index].title = newTitle;
+    if (currentPlaylistIndex === index) {
+      window.timerAPI.setTitle(newTitle);
+    }
+  }
+};
+
+window.updatePlaylistTime = (index, mins, secs) => {
+  if (playlistQueue[index]) {
+    playlistQueue[index].minutes = parseInt(mins) || 0;
+    playlistQueue[index].seconds = Math.max(0, Math.min(59, parseInt(secs) || 0));
+  }
 };
 
 window.renderState = function(state) {
@@ -929,6 +983,21 @@ window.renderState = function(state) {
     statusPill.textContent = "Idle";
     statusPill.dataset.state = "paused";
     stopAlarm();
+  }
+
+  // Playlist Real-time Updates (Progress & Buttons)
+  if (currentPlaylistIndex !== -1) {
+    const activeProgress = document.getElementById('playlist-progress-active');
+    if (activeProgress && totalMs > 0) {
+      const progress = isOvertime ? 1 : 1 - (remainingMs / totalMs);
+      activeProgress.style.width = `${Math.min(1, Math.max(0, progress)) * 100}%`;
+    }
+    
+    const playlistPauseBtn = document.getElementById('playlist-pause-btn');
+    if (playlistPauseBtn) {
+      playlistPauseBtn.textContent = isPaused ? '▶' : '⏸';
+      playlistPauseBtn.onclick = () => isPaused ? window.timerAPI.resume() : window.timerAPI.pause();
+    }
   }
 };
 

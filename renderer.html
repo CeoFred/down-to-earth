@@ -192,26 +192,82 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 10px 14px;
+        padding: 12px 14px;
         background: rgba(15, 23, 42, 0.5);
-        border-radius: 12px;
-        margin-bottom: 8px;
+        margin-bottom: 10px;
         border: 1px solid rgba(148, 163, 184, 0.1);
+        position: relative;
+        overflow: hidden;
+        transition: all 0.2s ease;
+      }
+
+      .playlist-progress {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        background: rgba(59, 130, 246, 0.15); /* Soft progress fill */
+        z-index: 0;
+        width: 0%;
+        transition: width 0.3s linear;
       }
 
       .playlist-item .info {
         display: flex;
         flex-direction: column;
+        position: relative;
+        z-index: 1;
+      }
+      
+      .playlist-item .actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        position: relative;
+        z-index: 1;
       }
 
       .playlist-item .title {
         font-size: 13px;
-        font-weight: 600;
+        font-weight: 700;
+        color: #fff;
       }
 
       .playlist-item .time {
         font-size: 11px;
         color: var(--muted);
+        font-family: ui-monospace, monospace;
+      }
+
+      .playlist-item.active {
+        border-color: rgba(59, 130, 246, 0.5);
+        background: rgba(15, 23, 42, 0.7);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+      }
+
+      .playlist-time-input {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: var(--muted);
+        font-family: ui-monospace, monospace;
+        font-size: 11px;
+        width: 34px;
+        height: 22px;
+        text-align: center;
+        border-radius: 6px;
+        padding: 0;
+        outline: none;
+        transition: all 0.2s ease;
+      }
+
+      .playlist-time-input:focus {
+        border-color: var(--accent);
+        background: rgba(59, 130, 246, 0.1);
+        color: #fff;
+      }
+
+      .playlist-time-input::-webkit-inner-spin-button {
+        display: none;
       }
 
       .setting-row {
@@ -476,6 +532,9 @@
         width: 100%;
         padding: 4px 0;
         outline: none;
+        resize: vertical;
+        min-height: 40px;
+        line-height: 1.4;
       }
 
       .msg-input::placeholder {
@@ -641,7 +700,7 @@
             <div class="timer-value" id="display">00:00</div>
           </div>
 
-          <button id="flashBtn" class="btn" style="width: 100%; margin-bottom: 20px; background: rgba(234, 179, 8, 0.15); border: 1px solid rgba(234, 179, 8, 0.4); color: #eab308; padding: 16px; font-weight: 800; border-radius: 16px; letter-spacing: 0.1em; transition: all 0.2s ease; box-shadow: 0 10px 30px rgba(234, 179, 8, 0.1);">⚡️ FLASH PROJECTOR</button>
+          <button id="flashBtn" class="btn" style="width: 100%; height: 52px; margin-bottom: 20px; background: rgba(234, 179, 8, 0.15); border: 1px solid rgba(234, 179, 8, 0.4); color: #eab308; padding: 0; font-weight: 800; border-radius: 16px; letter-spacing: 0.1em; transition: all 0.2s ease; box-shadow: 0 10px 30px rgba(234, 179, 8, 0.1);">⚡️ FLASH PROJECTOR</button>
 
           <div class="inputs-row">
             <div class="field">
@@ -702,7 +761,6 @@
         <div id="messagesTab" class="tab-content">
           <div style="margin-bottom:20px;">
             <div style="font-size:14px; font-weight:800; color:#fff;">Message Library</div>
-            <div style="font-size:10px; color:var(--muted);">Select and format messages for the talent</div>
           </div>
 
           <div id="messagesContainer" style="display:flex; flex-direction:column; gap:12px; max-height:450px; overflow-y:auto; padding-right:4px; padding-top:4px;">
@@ -710,7 +768,7 @@
             <button id="addMessageBtn" class="message-card add-message-card">
               <div style="display:flex; align-items:center; gap:10px; color:var(--accent);">
                 <span style="font-size:20px; font-weight:300;">+</span>
-                <span style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em;">Register New Message</span>
+                <span style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em;">Add New Message</span>
               </div>
             </button>
 
