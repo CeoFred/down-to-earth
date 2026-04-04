@@ -152,8 +152,23 @@ if (typeof window.timerAPI === 'undefined') {
     seek: (ms) => socket.emit('timer:seek', ms),
     setTitle: (title) => socket.emit('timer:setTitle', title),
     getState: () => new Promise((resolve) => {
-      socket.emit('timer:getState');
-      socket.once('timer:state', (state) => resolve(state));
+      // 1. Check if we already have a cached state (e.g. from connection event)
+      if (window.lastKnownState) return resolve(window.lastKnownState);
+      
+      // 2. Use the Socket.io Ack/Callback pattern (Reliable)
+      socket.emit('timer:getState', (state) => {
+        window.lastKnownState = state;
+        resolve(state);
+      });
+
+      // 3. Fallback for older servers/latency: Listen for the separate event
+      socket.once('timer:state', (state) => {
+        window.lastKnownState = state;
+        resolve(state);
+      });
+
+      // 4. Safety Timeout: We cannot stay hung forever or buttons won't work
+      setTimeout(() => resolve(window.lastKnownState || {}), 2000);
     }),
     onUpdate: (cb) => socket.on('timer:update', cb),
     onFinished: (cb) => socket.on('timer:finished', cb),
@@ -1271,13 +1286,15 @@ window.addEventListener("DOMContentLoaded", async () => {
   initTimeline();
 
   // Setup
-  const state = await window.timerAPI.getState();
-  window.renderState(state);
-  
-  // Initialize Projection Deck if status is available in initial state
-  if (state?.projectorStatus) {
-    updateProjectionDeckUI(state.projectorStatus);
-  }
+  // Non-blocking initial setup
+  window.timerAPI.getState().then(state => {
+    window.renderState(state);
+    
+    // Initialize Projection Deck if status is available
+    if (state?.projectorStatus) {
+      updateProjectionDeckUI(state.projectorStatus);
+    }
+  }).catch(err => console.error("Initial state sync failed:", err));
 
   window.timerAPI.onUpdate(window.renderState);
   window.timerAPI.onFinished(() => {

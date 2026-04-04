@@ -290,13 +290,19 @@ io.on('connection', (socket) => {
   });
 
   socket.on('timer:getState', (callback) => {
-    if (typeof callback === 'function') {
-      callback({ 
+    const state = { 
         remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused, customTitle,
         customNotes, config,
         authRequired: !authState 
-      });
+      };
+
+    // 1. Support Socket.io Callback pattern (Modern)
+    if (typeof callback === 'function') {
+      callback(state);
     }
+    
+    // 2. Support Separate Event pattern (Backwards compatibility with current renderer)
+    socket.emit('timer:state', state);
   });
 
   socket.on('timer:savePreset', (preset) => {
@@ -698,7 +704,10 @@ function seekTimer(ms) {
   broadcast('timer:update', { remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused });
 }
 
-ipcMain.handle('timer:start', (event, { ms, wrapUp }) => {
+ipcMain.handle('timer:start', (event, data) => {
+  // Support both raw ms (legacy) and structured payload {ms, wrapUp}
+  const ms = (typeof data === 'object' && data !== null) ? data.ms : data;
+  const wrapUp = (typeof data === 'object' && data !== null) ? data.wrapUp : null;
   startTimer(ms, wrapUp);
 });
 
