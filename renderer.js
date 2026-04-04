@@ -185,11 +185,20 @@ if (typeof window.timerAPI === 'undefined') {
       socket.once('timer:devicesUpdate', (devices) => resolve(devices));
     }),
     onDevicesUpdate: (cb) => socket.on('timer:devicesUpdate', cb),
+    onProjectorStatus: (cb) => socket.on('timer:projectorStatus', cb),
     blockDevice: (socketId, deviceId) => socket.emit('timer:blockDevice', { socketId, deviceId }),
     unblockDevice: (deviceId) => socket.emit('timer:unblockDevice', deviceId),
     refreshPin: () => Promise.reject('Not available remotely'),
-    stopTunnelFn: () => Promise.reject('Not available remotely')
+    stopTunnelFn: () => Promise.reject('Not available remotely'),
+    controlProjector: (action, data) => {
+        socket.emit('timer:controlProjector', action, data);
+        showToast(`[Remote] Triggering: ${action}`, 'info');
+    }
   };
+
+  socket.on('timer:controlResult', ({ action, success }) => {
+    showToast(`${action.toUpperCase()}: ${success ? 'Command Successful' : 'Command Failed'}`, success ? 'success' : 'error');
+  });
 
   socket.on('connect', async () => {
     const state = await window.timerAPI.getState();
@@ -206,7 +215,7 @@ if (typeof window.timerAPI === 'undefined') {
 }
 
 /* ---------------- AUDIO & TTS LOGIC ---------------- */
-let isMuted = false;
+var isMuted = false;
 let activeAlarmContext = null;
 let lastMilestoneAnnounced = null; // To prevent multiple TTS calls for same second
 
@@ -816,18 +825,78 @@ window.timerAPI.onProjectorStatus((status) => {
 
 window.renderProjectorStatus = function(status) {
   const pill = document.getElementById('projectorStatusPill');
-  if (!pill) return;
+  const powerState = document.getElementById('projectorPowerState');
+  const powerBtn = document.getElementById('projectorPowerBtn');
+  const powerText = document.getElementById('projectorPowerText');
+  const powerIcon = document.getElementById('projectorPowerIcon');
+  const fsBtn = document.getElementById('projectorFullscreenBtn');
+  const reloadBtn = document.getElementById('projectorReloadBtn');
+  const focusBtn = document.getElementById('projectorFocusBtn');
+  const select = document.getElementById('projectorDisplaySelect');
+
+  // Handle Display List Update (Optimization: avoid overwriting if list is identical)
+  if (select && status?.allDisplays) {
+    const listIds = status.allDisplays.map(d => d.id).join(',');
+    if (select.dataset.lastIds !== listIds) {
+        console.log("[ProjectionDeck] Display list changed, updating dropdown.");
+        const options = status.allDisplays.map(d => 
+        `<option value="${d.id}" ${d.id === status.displayId ? 'selected' : ''}>
+            ${d.isPrimary ? '⭐️ ' : ''}${d.label}
+        </option>`
+        ).join('');
+        select.innerHTML = options;
+        select.dataset.lastIds = listIds;
+    } else {
+        // Just sync current selection if it differs without rebuilding entire HTML
+        if (select.value != status.displayId && status.displayId) {
+            select.value = status.displayId;
+        }
+    }
+  }
 
   if (!status || !status.active) {
-    pill.textContent = 'Projector: Off';
-    pill.dataset.active = 'false';
-    pill.dataset.external = 'false';
+    if (pill) {
+      pill.textContent = 'Projector: Off';
+      pill.dataset.active = 'false';
+      pill.dataset.external = 'false';
+    }
+    if (powerState) {
+      powerState.textContent = 'OFFLINE';
+      powerState.style.background = 'rgba(239, 68, 68, 0.1)';
+      powerState.style.color = 'var(--danger)';
+    }
+    if (powerBtn) {
+       if (powerText) powerText.textContent = 'Open Stage Display';
+       if (powerIcon) powerIcon.textContent = '🚀';
+       powerBtn.classList.replace('btn-secondary', 'btn-primary');
+    }
+    if (fsBtn) fsBtn.disabled = true;
+    if (reloadBtn) reloadBtn.disabled = true;
+    if (focusBtn) focusBtn.disabled = true;
     return;
   }
 
-  pill.dataset.active = 'true';
-  pill.dataset.external = status.isExternal ? 'true' : 'false';
-  pill.textContent = `Proj: ${status.displayName || 'Connected'}`;
+  if (pill) {
+    pill.dataset.active = 'true';
+    pill.dataset.external = status.isExternal ? 'true' : 'false';
+    pill.textContent = `Proj: ${status.displayName || 'Connected'}`;
+  }
+
+  if (powerState) {
+    powerState.textContent = status.isExternal ? 'EXTERNAL' : 'LOCAL';
+    powerState.style.background = status.isExternal ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)';
+    powerState.style.color = status.isExternal ? '#10b981' : 'var(--accent)';
+  }
+
+  if (powerBtn) {
+    if (powerText) powerText.textContent = 'Close Stage Display';
+    if (powerIcon) powerIcon.textContent = '🔌';
+    powerBtn.classList.replace('btn-primary', 'btn-secondary');
+  }
+
+  if (fsBtn) fsBtn.disabled = false;
+  if (reloadBtn) reloadBtn.disabled = false;
+  if (focusBtn) focusBtn.disabled = false;
 };
 
 window.renderState = function(state) {
@@ -1204,6 +1273,11 @@ window.addEventListener("DOMContentLoaded", async () => {
   // Setup
   const state = await window.timerAPI.getState();
   window.renderState(state);
+  
+  // Initialize Projection Deck if status is available in initial state
+  if (state?.projectorStatus) {
+    updateProjectionDeckUI(state.projectorStatus);
+  }
 
   window.timerAPI.onUpdate(window.renderState);
   window.timerAPI.onFinished(() => {
@@ -1395,9 +1469,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
 
   // Controls
-  document.getElementById('startBtn').addEventListener('click', () => {
-    const mins = parseInt(document.getElementById('minutes').value) || 0;
-    const secs = parseInt(document.getElementById('seconds').value) || 0;
+  document.getElementById('startBtn')?.addEventListener('click', () => {
+    const mins = parseInt(document.getElementById('minutes')?.value) || 0;
+    const secs = parseInt(document.getElementById('seconds')?.value) || 0;
     
     const yEl = document.getElementById('overrideYellow');
     const rEl = document.getElementById('overrideRed');
@@ -1417,13 +1491,13 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
 
     const isRestart = currentState.isRunning || currentState.isPaused;
-    const title = document.getElementById('customTitle').value || "";
+    const title = document.getElementById('customTitle')?.value || "";
     window.timerAPI.setTitle(title);
     window.timerAPI.start({ ms: (mins * 60 + secs) * 1000, wrapUp });
     showToast(isRestart ? "Timer Restarted" : "Timer Started", isRestart ? "info" : "success");
   });
 
-  document.getElementById('pauseBtn').addEventListener('click', () => {
+  document.getElementById('pauseBtn')?.addEventListener('click', () => {
     if (currentState.isRunning) {
       window.timerAPI.pause();
       showToast("Timer Paused", "warning");
@@ -1433,26 +1507,26 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  document.getElementById('resetBtn').addEventListener('click', () => {
+  document.getElementById('resetBtn')?.addEventListener('click', () => {
     window.timerAPI.reset();
     currentPlaylistIndex = -1;
     renderPlaylist();
     showToast("Timer Reset", "info");
   });
 
-  document.getElementById('flashBtn').addEventListener('click', () => {
+  document.getElementById('flashBtn')?.addEventListener('click', () => {
     window.timerAPI.flash();
     showToast("Flash Command Sent ⚡️", "info");
   });
 
-  document.getElementById('savePresetBtn').addEventListener('click', () => {
-    const mins = parseInt(document.getElementById('minutes').value) || 0;
-    const secs = parseInt(document.getElementById('seconds').value) || 0;
+  document.getElementById('savePresetBtn')?.addEventListener('click', () => {
+    const mins = parseInt(document.getElementById('minutes')?.value) || 0;
+    const secs = parseInt(document.getElementById('seconds')?.value) || 0;
     const yEl = document.getElementById('overrideYellow');
     const rEl = document.getElementById('overrideRed');
     const yVal = yEl ? parseInt(yEl.value) : NaN;
     const rVal = rEl ? parseInt(rEl.value) : NaN;
-    const title = document.getElementById('customTitle').value || `${mins}m Preset`;
+    const title = document.getElementById('customTitle')?.value || `${mins}m Preset`;
 
     const preset = { id: Date.now().toString(), minutes: mins, seconds: secs, title };
     if (!isNaN(yVal)) preset.yellowSec = yVal;
@@ -1462,14 +1536,14 @@ window.addEventListener("DOMContentLoaded", async () => {
     showToast(`Preset "${title}" Saved`);
   });
 
-  document.getElementById('addToPlaylistBtn').addEventListener('click', () => {
-    const mins = parseInt(document.getElementById('minutes').value) || 0;
-    const secs = parseInt(document.getElementById('seconds').value) || 0;
+  document.getElementById('addToPlaylistBtn')?.addEventListener('click', () => {
+    const mins = parseInt(document.getElementById('minutes')?.value) || 0;
+    const secs = parseInt(document.getElementById('seconds')?.value) || 0;
     const yEl = document.getElementById('overrideYellow');
     const rEl = document.getElementById('overrideRed');
     const yVal = yEl ? parseInt(yEl.value) : NaN;
     const rVal = rEl ? parseInt(rEl.value) : NaN;
-    const title = document.getElementById('customTitle').value || "Unnamed Session";
+    const title = document.getElementById('customTitle')?.value || "Unnamed Session";
 
     const item = { minutes: mins, seconds: secs, title };
     if (!isNaN(yVal)) item.yellowSec = yVal;
@@ -1480,53 +1554,53 @@ window.addEventListener("DOMContentLoaded", async () => {
     showToast(`Item "${title}" added to Playlist`);
   });
 
-  document.getElementById('nextBtn').addEventListener('click', () => {
+  document.getElementById('nextBtn')?.addEventListener('click', () => {
     if (currentPlaylistIndex < playlistQueue.length - 1) {
       window.startPlaylistAt(currentPlaylistIndex + 1);
     }
   });
 
-  document.getElementById('prevBtn').addEventListener('click', () => {
+  document.getElementById('prevBtn')?.addEventListener('click', () => {
     if (currentPlaylistIndex > 0) {
       window.startPlaylistAt(currentPlaylistIndex - 1);
     }
   });
 
-  document.getElementById('clearPlaylistBtn').addEventListener('click', () => {
+  document.getElementById('clearPlaylistBtn')?.addEventListener('click', () => {
     playlistQueue = [];
     currentPlaylistIndex = -1;
     renderPlaylist();
+    showToast("Lineup Cleared", "warning");
   });
 
-  document.getElementById('testSoundBtn').addEventListener('click', playAlarm);
+  document.getElementById('testSoundBtn')?.addEventListener('click', playAlarm);
   
-  document.getElementById('saveSettingsBtn').addEventListener('click', () => {
-    const autoAdvance = document.getElementById('autoAdvanceToggle').checked;
-    const ttsEnabled = document.getElementById('ttsToggle').checked;
-    const readPlaylistTitle = document.getElementById('readPlaylistTitleToggle').checked;
-    const alarmSound = document.getElementById('alarmSoundSelect').value;
-    const milestoneStr = document.getElementById('milestonesInput').value;
+  document.getElementById('saveSettingsBtn')?.addEventListener('click', () => {
+    const autoAdvance = document.getElementById('autoAdvanceToggle')?.checked;
+    const ttsEnabled = document.getElementById('ttsToggle')?.checked;
+    const readPlaylistTitle = document.getElementById('readPlaylistTitleToggle')?.checked;
+    const alarmSound = document.getElementById('alarmSoundSelect')?.value;
+    const milestoneStr = document.getElementById('milestonesInput')?.value || "";
     
     const visibility = {
-      showTimer: document.getElementById('showTimerToggle').checked,
-      showBar: document.getElementById('showBarToggle').checked,
-      showTitle: document.getElementById('showTitleToggle').checked,
-      showNotes: document.getElementById('showNotesToggle').checked,
+      showTimer: document.getElementById('showTimerToggle')?.checked,
+      showBar: document.getElementById('showBarToggle')?.checked,
+      showTitle: document.getElementById('showTitleToggle')?.checked,
+      showNotes: document.getElementById('showNotesToggle')?.checked,
     };
     
-    // Use the robust human-time parser
     const milestones = milestoneStr.split(',')
       .map(s => parseHumanTime(s.trim()))
       .filter(n => n !== null && !isNaN(n))
-      .sort((a, b) => b - a); // Sort longest to shortest
+      .sort((a, b) => b - a);
       
     const wrapUp = {
-      yellowMs: (parseInt(document.getElementById('wrapUpYellow').value) || 60) * 1000,
-      redMs: (parseInt(document.getElementById('wrapUpRed').value) || 30) * 1000,
-      flashOnRed: document.getElementById('wrapUpFlashRed').checked,
-      flashOnOvertime: document.getElementById('wrapUpFlashOvertime').checked,
-      soundOnYellow: document.getElementById('wrapUpSoundEnabled').checked,
-      soundOnRed: document.getElementById('wrapUpSoundEnabled').checked
+      yellowMs: (parseInt(document.getElementById('wrapUpYellow')?.value) || 60) * 1000,
+      redMs: (parseInt(document.getElementById('wrapUpRed')?.value) || 30) * 1000,
+      flashOnRed: document.getElementById('wrapUpFlashRed')?.checked,
+      flashOnOvertime: document.getElementById('wrapUpFlashOvertime')?.checked,
+      soundOnYellow: document.getElementById('wrapUpSoundEnabled')?.checked,
+      soundOnRed: document.getElementById('wrapUpSoundEnabled')?.checked
     };
 
     const settings = { autoAdvance, ttsEnabled, readPlaylistTitle, alarmSound, milestones, visibility, wrapUp };
@@ -1588,7 +1662,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   timerColor?.addEventListener('input', (e) => { timerHex.value = e.target.value; });
   timerHex?.addEventListener('input', (e) => { timerColor.value = e.target.value; });
 
-  document.getElementById('muteBtn').addEventListener('click', (e) => {
+  document.getElementById('muteBtn')?.addEventListener('click', (e) => {
     isMuted = !isMuted;
     const label = isMuted ? "🔇 Audio Off" : "🔊 Audio On";
     e.target.textContent = label;
@@ -1659,3 +1733,69 @@ window.addEventListener("DOMContentLoaded", async () => {
     });
   }
 });
+
+// Finalize Projection Deck (Global Scope)
+const setupProjectionDeck = () => {
+  const powerBtn = document.getElementById('projectorPowerBtn');
+  const fsBtn = document.getElementById('projectorFullscreenBtn');
+  const reloadBtn = document.getElementById('projectorReloadBtn');
+  const focusBtn = document.getElementById('projectorFocusBtn');
+  const select = document.getElementById('projectorDisplaySelect');
+
+  if (!powerBtn) return; // Not on correct page/tab
+
+  console.log("[ProjectionDeck] Initializing Shared Controls...");
+
+  powerBtn.onclick = async () => {
+    const pill = document.getElementById('projectorStatusPill');
+    const isActive = pill?.dataset.active === 'true';
+    const displayId = select?.value;
+    
+    if (!isActive) {
+        window.timerAPI.controlProjector('open', { displayId });
+        showToast("Opening Projection Window...");
+    } else {
+        window.timerAPI.controlProjector('close');
+        showToast("Closing Projection Window...");
+    }
+  };
+
+  if (select) {
+    select.onchange = (e) => {
+      const displayId = e.target.value;
+      const isActive = document.getElementById('projectorStatusPill')?.dataset.active === 'true';
+      if (displayId && isActive) {
+          window.timerAPI.controlProjector('setDisplay', { displayId });
+          showToast(`Targeting Display ID: ${displayId}`);
+      }
+    };
+  }
+
+  if (fsBtn) {
+    fsBtn.onclick = () => {
+      window.timerAPI.controlProjector('fullscreen');
+      showToast("Toggling Fullscreen Mode");
+    };
+  }
+
+  if (reloadBtn) {
+    reloadBtn.onclick = () => {
+      window.timerAPI.controlProjector('reload');
+      showToast("Triggering Stage Hot Reload", "info");
+    };
+  }
+
+  if (focusBtn) {
+    focusBtn.onclick = () => {
+      window.timerAPI.controlProjector('focus');
+      showToast("Bringing Projection to Front", "info");
+    };
+  }
+};
+
+// Ensure initialization happens as soon as possible
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', setupProjectionDeck);
+} else {
+  setupProjectionDeck();
+}

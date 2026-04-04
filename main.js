@@ -156,11 +156,58 @@ io.on('connection', (socket) => {
   remoteDevices.set(socket.id, currentDevice);
   broadcastDevices();
 
-  // Send current state to new client (Read-only initially)
-  socket.emit('timer:state', { 
-    remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused, customTitle,
-    customNotes, config 
-  });
+    socket.emit('timer:state', { 
+      remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused, customTitle,
+      customNotes, config,
+      projectorStatus: getProjectorStatus() // Add initial hardware status
+    });
+
+    socket.on('timer:controlProjector', async (action, data = {}) => {
+      if (!authState) return socket.emit('auth:error', 'Authentication required');
+      
+      console.log(`[Remote] Projector Command: ${action}`, data);
+      let success = false;
+      const displayId = data.displayId;
+
+      switch (action) {
+        case 'open':
+          createProjectorWindow(displayId);
+          success = true;
+          break;
+        case 'close':
+          if (projectorWindow) {
+            projectorWindow.close();
+            projectorWindow = null;
+            broadcastProjectorStatus();
+          }
+          success = true;
+          break;
+        case 'fullscreen':
+          if (projectorWindow) {
+            const isFull = projectorWindow.isFullScreen();
+            projectorWindow.setFullScreen(!isFull);
+            broadcastProjectorStatus();
+          }
+          success = true;
+          break;
+        case 'reload':
+          if (projectorWindow) {
+            projectorWindow.reload();
+          }
+          success = true;
+          break;
+        case 'bringToFront':
+          if (projectorWindow) {
+            projectorWindow.show();
+            projectorWindow.focus();
+          }
+          success = true;
+          break;
+      }
+      
+      // Return result to the specific remote client for toast feedback
+      socket.emit('timer:controlResult', { action, success });
+    });
 
   socket.on('register', ({ pin, deviceId, userAgent, clientType }) => {
     // 1. Mandatory Identity Update (Even for blocked devices)
@@ -410,11 +457,35 @@ function createMainWindow() {
   });
 }
 
-function createProjectorWindow() {
-  const displays = screen.getAllDisplays();
-  const externalDisplay = displays.find((d) => d.bounds.x !== 0 || d.bounds.y !== 0);
+function createProjectorWindow(targetDisplayId = null) {
+  if (projectorWindow && !projectorWindow.isDestroyed()) {
+    if (targetDisplayId) {
+      const displays = screen.getAllDisplays();
+      const target = displays.find(d => d.id.toString() === targetDisplayId.toString());
+      if (target) {
+        projectorWindow.setFullScreen(false);
+        projectorWindow.setBounds(target.bounds);
+        projectorWindow.setFullScreen(true);
+      }
+    }
+    projectorWindow.show();
+    projectorWindow.focus();
+    broadcastProjectorStatus();
+    return;
+  }
 
-  const bounds = externalDisplay ? externalDisplay.bounds : displays[0].bounds;
+  const displays = screen.getAllDisplays();
+  let targetDisplay = null;
+  
+  if (targetDisplayId) {
+      targetDisplay = displays.find(d => d.id.toString() === targetDisplayId.toString());
+  }
+  
+  if (!targetDisplay) {
+      targetDisplay = displays.find((d) => d.bounds.x !== 0 || d.bounds.y !== 0) || displays[0];
+  }
+
+  const bounds = targetDisplay.bounds;
 
   projectorWindow = new BrowserWindow({
     x: bounds.x,
@@ -436,6 +507,11 @@ function createProjectorWindow() {
 
    projectorWindow.once('ready-to-show', () => {
     projectorWindow.setFullScreen(true);
+    broadcastProjectorStatus();
+  });
+
+  projectorWindow.on('closed', () => {
+    projectorWindow = null;
     broadcastProjectorStatus();
   });
 
@@ -485,6 +561,9 @@ function broadcast(channel, data) {
     io.emit('timer:notes', data);
   } else if (channel === 'timer:flash') {
     io.emit('timer:flash');
+  } else if (channel === 'timer:projectorStatus') {
+    // Broadcast hardware status to all remote controllers
+    io.emit('timer:projectorStatus', data);
   }
 }
 
@@ -503,7 +582,13 @@ function getProjectorStatus() {
       active: true,
       isExternal,
       displayName: currentDisplay.label || `Display ${currentDisplay.id}`,
-      displayCount: displays.length
+      displayId: currentDisplay.id,
+      allDisplays: displays.map(d => ({
+          id: d.id,
+          label: d.label || `Display ${d.id}`,
+          isPrimary: d.id === screen.getPrimaryDisplay().id,
+          bounds: d.bounds
+      }))
     };
   } catch (err) {
     console.error("Error calculating projector status:", err);
@@ -678,6 +763,46 @@ ipcMain.handle("timer:saveSettings", (event, settings) => {
 ipcMain.handle("timer:setNotes", (event, notes) => {
   customNotes = notes || "";
   broadcast('timer:notes', { notes: customNotes });
+});
+
+ipcMain.handle('timer:controlProjector', (event, action, data) => {
+  const displayId = data?.displayId;
+  
+  if (action === 'open') {
+    createProjectorWindow(displayId);
+    return true;
+  }
+
+  if (!projectorWindow || projectorWindow.isDestroyed()) {
+    if (action === 'setDisplay' && displayId) {
+       createProjectorWindow(displayId);
+       return true;
+    }
+    return false;
+  }
+
+  switch (action) {
+    case 'close':
+      projectorWindow.close();
+      return true;
+    case 'fullscreen':
+      const isFull = projectorWindow.isFullScreen();
+      projectorWindow.setFullScreen(!isFull);
+      return true;
+    case 'reload':
+      projectorWindow.reload();
+      return true;
+    case 'focus':
+      projectorWindow.focus();
+      return true;
+    case 'setDisplay':
+      if (displayId) {
+          createProjectorWindow(displayId);
+          return true;
+      }
+      break;
+  }
+  return false;
 });
 
 // TUNNEL CONTROL IPCs

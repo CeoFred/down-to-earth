@@ -27,8 +27,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     const socket = io();
     window.timerAPI = {
       getState: () => new Promise(resolve => {
-        socket.emit('timer:getState');
-        socket.once('timer:state', resolve);
+        socket.emit('timer:getState', (state) => resolve(state));
       }),
       onUpdate: (cb) => socket.on('timer:update', cb),
       onTitle: (cb) => socket.on('timer:title', cb),
@@ -64,17 +63,23 @@ window.addEventListener('DOMContentLoaded', async () => {
       pinInput.onkeypress = (e) => { if (e.key === 'Enter') window.timerAPI.submitPin(pinInput.value); };
     }
 
-    // Check PIN requirement from initial state
-    socket.once('timer:state', (state) => {
+    // Check PIN requirement from current state
+    const checkPinRequired = (state) => {
       const pinRequired = state?.config?.settings?.requirePinProjector !== false;
       if (!pinRequired) {
         // Auto-authenticate — no PIN needed
         socket.emit('register', { pin: '', clientType: 'projector', deviceId: getDeviceId(), userAgent: navigator.userAgent });
-        return;
+      } else {
+        // Show PIN overlay
+        if (overlay) overlay.style.display = 'flex';
       }
-      // Show PIN overlay
-      if (overlay) overlay.style.display = 'flex';
-    });
+    };
+
+    // 1. Listen for broadcast (if it arrives after we set up)
+    socket.once('timer:state', checkPinRequired);
+    
+    // 2. Proactively ask for it (if we missed the broadcast)
+    window.timerAPI.getState().then(checkPinRequired);
 
     window.timerAPI.onAuth((success) => {
       if (success) {

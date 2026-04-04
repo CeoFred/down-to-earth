@@ -27,5 +27,6 @@ contextBridge.exposeInMainWorld('timerAPI', {
   refreshPin: () => ipcRenderer.invoke('timer:refreshPin'),
   flash: () => ipcRenderer.invoke('timer:flash'),
   onFlash: (cb) => ipcRenderer.on('timer:flash', () => cb()),
-  onProjectorStatus: (cb) => ipcRenderer.on('timer:projectorStatus', (_e, data) => cb(data))
+  onProjectorStatus: (cb) => ipcRenderer.on('timer:projectorStatus', (_e, data) => cb(data)),
+  controlProjector: (action, data) => ipcRenderer.invoke('timer:controlProjector', action, data)
 });
