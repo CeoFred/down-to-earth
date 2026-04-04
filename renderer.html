@@ -108,6 +108,24 @@
         background: #9ca3af;
       }
 
+      #projectorStatusPill {
+        background: rgba(59, 130, 246, 0.1);
+        color: var(--accent);
+        border: 1px solid rgba(59, 130, 246, 0.2);
+      }
+
+      #projectorStatusPill[data-external="true"] {
+        background: rgba(16, 185, 129, 0.1);
+        color: #10b981;
+        border-color: rgba(16, 185, 129, 0.2);
+      }
+
+      #projectorStatusPill[data-active="false"] {
+        background: rgba(239, 68, 68, 0.1);
+        color: var(--danger);
+        border-color: rgba(239, 68, 68, 0.2);
+      }
+
       .timer-display {
         margin: 12px 0 24px;
         padding: 20px;
@@ -708,7 +726,10 @@
             <div class="card-title">Controller</div>
             <div class="card-subtitle">Production Deck</div>
           </div>
-          <div id="statusPill" class="status-pill" data-state="paused">Idle</div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <div id="projectorStatusPill" class="status-pill" data-active="false">Projector: Off</div>
+            <div id="statusPill" class="status-pill" data-state="paused">Idle</div>
+          </div>
         </div>
 
         <nav class="tab-nav">

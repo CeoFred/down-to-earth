@@ -436,12 +436,22 @@ function createProjectorWindow() {
 
    projectorWindow.once('ready-to-show', () => {
     projectorWindow.setFullScreen(true);
+    broadcastProjectorStatus();
   });
+
+  // Track if projector is moved between displays manually (if not in fullscreen)
+  projectorWindow.on('moved', broadcastProjectorStatus);
+  projectorWindow.on('resized', broadcastProjectorStatus);
 }
 
 app.whenReady().then(() => {
   createMainWindow();
   createProjectorWindow();
+
+  // Listen for display changes (e.g. plugging in a monitor)
+  screen.on('display-added', broadcastProjectorStatus);
+  screen.on('display-removed', broadcastProjectorStatus);
+  screen.on('display-metrics-changed', broadcastProjectorStatus);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -476,6 +486,34 @@ function broadcast(channel, data) {
   } else if (channel === 'timer:flash') {
     io.emit('timer:flash');
   }
+}
+
+/* ---------------- PROJECTOR STATUS MONITORING ---------------- */
+function getProjectorStatus() {
+  if (!projectorWindow || projectorWindow.isDestroyed()) {
+    return { active: false, label: "Disconnected", isExternal: false };
+  }
+
+  try {
+    const displays = screen.getAllDisplays();
+    const currentDisplay = screen.getDisplayMatching(projectorWindow.getBounds());
+    const isExternal = currentDisplay.id !== screen.getPrimaryDisplay().id;
+
+    return {
+      active: true,
+      isExternal,
+      displayName: currentDisplay.label || `Display ${currentDisplay.id}`,
+      displayCount: displays.length
+    };
+  } catch (err) {
+    console.error("Error calculating projector status:", err);
+    return { active: false, label: "Error", isExternal: false };
+  }
+}
+
+function broadcastProjectorStatus() {
+  const status = getProjectorStatus();
+  broadcast('timer:projectorStatus', status);
 }
 
 function startTimer(ms, wrapUpOverride = null) {
@@ -610,7 +648,8 @@ ipcMain.handle("timer:getState", () => {
     customTitle, 
     customNotes, 
     config,
-    activeWrapUp // Send current overrides if any
+    activeWrapUp, // Send current overrides if any
+    projectorStatus: getProjectorStatus()
   };
 });
 

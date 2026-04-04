@@ -199,6 +199,10 @@ if (typeof window.timerAPI === 'undefined') {
   socket.on('timer:update', (state) => {
     if (typeof window.renderState === 'function') window.renderState(state);
   });
+
+  socket.on('timer:projectorStatus', (status) => {
+    if (typeof window.renderProjectorStatus === 'function') window.renderProjectorStatus(status);
+  });
 }
 
 /* ---------------- AUDIO & TTS LOGIC ---------------- */
@@ -806,10 +810,32 @@ window.updatePlaylistTime = (index, mins, secs) => {
   }
 };
 
+window.timerAPI.onProjectorStatus((status) => {
+  if (typeof window.renderProjectorStatus === 'function') window.renderProjectorStatus(status);
+});
+
+window.renderProjectorStatus = function(status) {
+  const pill = document.getElementById('projectorStatusPill');
+  if (!pill) return;
+
+  if (!status || !status.active) {
+    pill.textContent = 'Projector: Off';
+    pill.dataset.active = 'false';
+    pill.dataset.external = 'false';
+    return;
+  }
+
+  pill.dataset.active = 'true';
+  pill.dataset.external = status.isExternal ? 'true' : 'false';
+  pill.textContent = `Proj: ${status.displayName || 'Connected'}`;
+};
+
 window.renderState = function(state) {
   if (!state) return;
-  const { remainingMs, totalMs, isRunning, isPaused, isOvertime, overtimeMs, config } = state;
+  const { remainingMs, totalMs, isRunning, isPaused, isOvertime, overtimeMs, config, projectorStatus } = state;
   currentState = state;
+
+  if (projectorStatus) window.renderProjectorStatus(projectorStatus);
   
   if (config) {
     appConfig = config;
