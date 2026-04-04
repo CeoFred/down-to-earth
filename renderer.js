@@ -1292,7 +1292,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     
     // Initialize Projection Deck if status is available
     if (state?.projectorStatus) {
-      updateProjectionDeckUI(state.projectorStatus);
+      window.renderProjectorStatus(state.projectorStatus);
     }
   }).catch(err => console.error("Initial state sync failed:", err));
 
