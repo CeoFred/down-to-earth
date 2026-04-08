@@ -213,6 +213,110 @@
         to { opacity: 1; transform: translateY(0); }
       }
 
+      /* Premium Appearance Controls */
+      .appearance-section {
+        margin-bottom: 24px;
+      }
+      .appearance-section-title {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.15em;
+        color: var(--accent);
+        font-weight: 800;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .appearance-section-title::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: linear-gradient(90deg, rgba(59, 130, 246, 0.2), transparent);
+      }
+      .appearance-card {
+        background: rgba(15, 23, 42, 0.3);
+        border: 1px solid rgba(148, 163, 184, 0.08);
+        border-radius: 16px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        transition: all 0.2s ease;
+      }
+      .appearance-card:hover {
+        border-color: rgba(59, 130, 246, 0.2);
+        background: rgba(15, 23, 42, 0.4);
+      }
+      .control-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      .control-item {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .control-label {
+        font-size: 11px;
+        font-weight: 600;
+        color: rgba(156, 163, 175, 0.8);
+      }
+      .premium-input {
+        width: 100%;
+        background: rgba(0, 0, 0, 0.25);
+        border: 1px solid rgba(148, 163, 184, 0.1);
+        border-radius: 10px;
+        padding: 8px 12px;
+        color: #fff;
+        font-size: 13px;
+        outline: none;
+        transition: all 0.2s ease;
+        font-family: inherit;
+      }
+      .premium-input:focus {
+        border-color: var(--accent);
+        background: rgba(0, 0, 0, 0.35);
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      }
+      .color-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(0, 0, 0, 0.25);
+        border: 1px solid rgba(148, 163, 184, 0.1);
+        border-radius: 10px;
+        padding: 4px;
+        padding-left: 10px;
+      }
+      .color-preview-trigger {
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        cursor: pointer;
+        padding: 0;
+        overflow: hidden;
+        flex-shrink: 0;
+      }
+      .color-preview-trigger input[type="color"] {
+        width: 150%;
+        height: 150%;
+        margin: -25%;
+        cursor: pointer;
+        border: none;
+        background: none;
+      }
+      .hex-input {
+        border: none !important;
+        background: transparent !important;
+        padding: 4px 0 !important;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 11px !important;
+        box-shadow: none !important;
+      }
+
       .playlist-item {
         display: flex;
         align-items: center;
@@ -753,9 +857,15 @@
             </div>
           </div>
 
-          <div class="timer-display">
+          <div class="timer-display" style="position: relative;">
             <div class="timer-label" id="timerLabel">Time Remaining</div>
             <div class="timer-value" id="display">00:00</div>
+            
+            <!-- REAL-TIME CLOCK COMPONENT -->
+            <div id="dashboardClockContainer" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.05); display: flex; flex-direction: column; align-items: center; gap: 2px;">
+              <div id="dashboardClockTime" style="font-size: 18px; font-weight: 800; font-family: ui-monospace; letter-spacing: 0.05em; color: var(--accent);">00:00:00 AM</div>
+              <div id="dashboardClockZone" style="font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Loding Timezone...</div>
+            </div>
           </div>
 
           <button id="flashBtn" class="btn" style="width: 100%; height: 52px; margin-bottom: 20px; background: rgba(234, 179, 8, 0.15); border: 1px solid rgba(234, 179, 8, 0.4); color: #eab308; padding: 0; font-weight: 800; border-radius: 16px; letter-spacing: 0.1em; transition: all 0.2s ease; box-shadow: 0 10px 30px rgba(234, 179, 8, 0.1);">⚡️ FLASH PROJECTOR</button>
@@ -841,115 +951,136 @@
 
 
         <!-- APPEARANCE TAB -->
-        <div id="appearanceTab" class="tab-content" style="padding: 4px;">
-          <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--accent); font-weight: 800; margin-bottom: 20px; display: flex; align-items: center; gap: 8px;">
-            <span style="width: 20px; height: 1px; background: var(--accent); opacity: 0.3;"></span>
-            Design & Typography
-          </div>
-
-          <!-- Timer Layout -->
-          <div class="setting-group" style="background: rgba(15, 23, 42, 0.3); padding: 16px; border-radius: 16px; margin-bottom: 20px; border: 1px solid rgba(148, 163, 184, 0.1);">
-            <div style="font-size: 13px; font-weight: 700; color: white; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
-              <span style="color: var(--accent);"> clock </span> Timer Clock
-            </div>
-            
-            <div class="setting-row" style="margin-bottom: 12px;">
-              <div><div style="font-size: 13px; font-weight: 600;">Size</div><div style="font-size: 10px; color: var(--muted);">e.g. 24vw</div></div>
-              <input type="text" id="appearanceTimerSize" class="field-input" style="width: 80px; padding: 6px 10px; text-align: center;">
-            </div>
-            <div class="setting-row" style="margin-bottom: 12px;">
-              <div><div style="font-size: 13px; font-weight: 600;">Color</div><div style="font-size: 10px; color: var(--muted);">Primary hex color</div></div>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <input type="color" id="appearanceTimerColor" style="width: 30px; height: 30px; border: none; background: none; cursor: pointer; padding: 0;">
-                <input type="text" id="appearanceTimerColorHex" class="field-input" style="width: 80px; padding: 6px 10px; font-family: monospace; font-size: 11px; text-align: center;">
+        <div id="appearanceTab" class="tab-content">
+          
+          <!-- Section 1: Primary Timer -->
+          <div class="appearance-section">
+            <div class="appearance-section-title">Primary Countdown</div>
+            <div class="appearance-card">
+              <div class="control-grid">
+                <div class="control-item">
+                  <span class="control-label">Font Family</span>
+                  <select id="appearanceTimerFont" class="premium-input">
+                    <option value="ui-monospace">Monospace</option>
+                    <option value="system-ui">Sans Serif</option>
+                    <option value="'Oswald'">Oswald (Condensed)</option>
+                    <option value="'Inter'">Inter (Modern)</option>
+                  </select>
+                </div>
+                <div class="control-item">
+                  <span class="control-label">Timer Size</span>
+                  <input type="text" id="appearanceTimerSize" class="premium-input" placeholder="e.g. 24vw">
+                </div>
+              </div>
+              <div class="control-grid">
+                <div class="control-item">
+                  <span class="control-label">Timer Color</span>
+                  <div class="color-group">
+                    <div class="color-preview-trigger">
+                      <input type="color" id="appearanceTimerColor" oninput="document.getElementById('appearanceTimerColorHex').value = this.value">
+                    </div>
+                    <input type="text" id="appearanceTimerColorHex" class="premium-input hex-input" value="#ffffff">
+                  </div>
+                </div>
               </div>
             </div>
-            <div class="setting-row">
-              <div><div style="font-size: 13px; font-weight: 600;">Font</div></div>
-              <select id="appearanceTimerFont" class="field-input" style="width: 140px; padding: 6px;">
-                <option value="ui-monospace">Monospace</option>
-                <option value="system-ui">Sans Serif</option>
-                <option value="'Oswald'">Oswald (Condensed)</option>
-                <option value="'Inter'">Inter (Modern)</option>
-              </select>
-            </div>
           </div>
 
-          <!-- Section Label -->
-          <div class="setting-group" style="background: rgba(15, 23, 42, 0.3); padding: 16px; border-radius: 16px; margin-bottom: 20px; border: 1px solid rgba(148, 163, 184, 0.1);">
-            <div style="font-size: 13px; font-weight: 700; color: white; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
-              <span style="color: var(--accent);">◓ title </span> Segment Title
-            </div>
-            <div class="setting-row" style="margin-bottom: 12px;">
-              <div><div style="font-size: 13px; font-weight: 600;">Size</div><div style="font-size: 10px; color: var(--muted);">e.g. 6vh</div></div>
-              <input type="text" id="appearanceTitleSize" class="field-input" style="width: 80px; padding: 6px 10px; text-align: center;">
-            </div>
-            <div class="setting-row">
-              <div><div style="font-size: 13px; font-weight: 600;">Color</div></div>
-              <input type="color" id="appearanceTitleColor" style="width: 30px; height: 30px; border: none; background: none; cursor: pointer;">
-            </div>
-          </div>
-
-          <!-- Stage Notes -->
-          <div class="setting-group" style="background: rgba(15, 23, 42, 0.3); padding: 16px; border-radius: 16px; margin-bottom: 20px; border: 1px solid rgba(148, 163, 184, 0.1);">
-            <div style="font-size: 13px; font-weight: 700; color: white; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
-              <span style="color: var(--accent);">◗ note </span> Stage Notes
-            </div>
-            <div class="setting-row" style="margin-bottom: 12px;">
-              <div><div style="font-size: 13px; font-weight: 600;">Size</div><div style="font-size: 10px; color: var(--muted);">e.g. 4.5vh</div></div>
-              <input type="text" id="appearanceNotesSize" class="field-input" style="width: 80px; padding: 6px 10px; text-align: center;">
-            </div>
-            <div class="setting-row">
-              <div><div style="font-size: 13px; font-weight: 600;">Color</div></div>
-              <input type="color" id="appearanceNotesColor" style="width: 30px; height: 30px; border: none; background: none; cursor: pointer;">
-            </div>
-          </div>
-
-          <!-- Progress Bar -->
-          <div class="setting-group" style="background: rgba(15, 23, 42, 0.3); padding: 16px; border-radius: 16px; margin-bottom: 20px; border: 1px solid rgba(148, 163, 184, 0.1);">
-            <div style="font-size: 13px; font-weight: 700; color: white; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
-              <span style="color: var(--accent);">▭ bar </span> Progress Bar
-            </div>
-            <div class="setting-row" style="margin-bottom: 12px;">
-              <div><div style="font-size: 13px; font-weight: 600;">Track Color</div></div>
-              <input type="color" id="appearanceBarColor" style="width: 30px; height: 30px; border: none; background: none; cursor: pointer;">
-            </div>
-            <div class="setting-row">
-              <div><div style="font-size: 13px; font-weight: 600;">Height</div><div style="font-size: 10px; color: var(--muted);">e.g. 12px</div></div>
-              <input type="text" id="appearanceBarHeight" class="field-input" style="width: 80px; padding: 6px 10px; text-align: center;">
-            </div>
-          </div>
-
-          <!-- Focus Mode -->
-          <div class="setting-group" style="background: rgba(59, 130, 246, 0.1); padding: 16px; border-radius: 16px; margin-bottom: 20px; border: 1px solid rgba(59, 130, 246, 0.2);">
-            <div style="font-size: 13px; font-weight: 800; color: var(--accent); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; text-transform: uppercase; letter-spacing: 0.1em;">
-              ⭐ Focus Mode
-            </div>
-            
-            <div class="setting-row" style="margin-bottom: 12px;">
-              <div>
-                <div style="font-size: 13px; font-weight: 600;">Enable Focus</div>
-                <div style="font-size: 10px; color: var(--muted);">Spotlight a specific item</div>
+          <!-- Section 2: Real-Time Clock -->
+          <div class="appearance-section">
+            <div class="appearance-section-title">Real-Time Clock</div>
+            <div class="appearance-card" style="border-left: 2px solid var(--accent);">
+              <div class="control-grid">
+                <div class="control-item">
+                  <span class="control-label">Clock Size</span>
+                  <input type="text" id="appearanceClockSize" class="premium-input" placeholder="e.g. 17vh">
+                </div>
+                <div class="control-item">
+                  <span class="control-label">Clock Color</span>
+                  <div class="color-group">
+                    <div class="color-preview-trigger">
+                      <input type="color" id="appearanceClockColor">
+                    </div>
+                    <input type="text" id="appearanceClockColorValue" class="premium-input hex-input" value="rgba(255,255,255,0.8)" readonly style="opacity:0.5;">
+                  </div>
+                </div>
               </div>
-              <label class="toggle" style="transform: scale(0.85);">
-                <input type="checkbox" id="focusModeEnabled">
-                <span class="slider"></span>
-              </label>
-            </div>
-
-            <div class="setting-row">
-              <div><div style="font-size: 13px; font-weight: 600;">Target Item</div></div>
-              <select id="focusModeItem" class="field-input" style="width: 120px; padding: 6px;">
-                <option value="timer">Timer</option>
-                <option value="notes">Stage Notes</option>
-                <option value="title">Segment Title</option>
-              </select>
+              <div style="font-size: 10px; color: var(--muted); background: rgba(59, 130, 246, 0.05); padding: 8px; border-radius: 8px; border: 1px dashed rgba(59, 130, 246, 0.2);">
+                Tip: The clock font automatically matches the Primary Countdown font for visual consistency.
+              </div>
             </div>
           </div>
 
-          <div style="margin-top: 24px; padding-bottom: 10px; display: flex; gap: 12px;">
-            <button id="saveAppearanceBtn" class="btn btn-primary" style="flex: 2; padding: 14px;">Apply Theme Changes</button>
-            <button id="resetAppearanceBtn" class="btn btn-ghost" style="flex: 1; padding: 14px; border: 1px solid rgba(255, 255, 255, 0.1);">Reset</button>
+          <!-- Section 3: Environment -->
+          <div class="appearance-section">
+            <div class="appearance-section-title">Stage Environment</div>
+            <div class="appearance-card">
+              <div class="control-grid">
+                <div class="control-item">
+                  <span class="control-label">Title Size</span>
+                  <input type="text" id="appearanceTitleSize" class="premium-input" placeholder="6vh">
+                </div>
+                <div class="control-item">
+                  <span class="control-label">Title Color</span>
+                  <div class="color-preview-trigger" style="width: 100%; height: 35px;">
+                    <input type="color" id="appearanceTitleColor">
+                  </div>
+                </div>
+              </div>
+              <div class="control-grid">
+                <div class="control-item">
+                  <span class="control-label">Notes Size</span>
+                  <input type="text" id="appearanceNotesSize" class="premium-input" placeholder="4.5vh">
+                </div>
+                <div class="control-item">
+                  <span class="control-label">Notes Color</span>
+                  <div class="color-preview-trigger" style="width: 100%; height: 35px;">
+                    <input type="color" id="appearanceNotesColor">
+                  </div>
+                </div>
+              </div>
+              <div class="control-grid">
+                <div class="control-item">
+                  <span class="control-label">Bar Height</span>
+                  <input type="text" id="appearanceBarHeight" class="premium-input" placeholder="12px">
+                </div>
+                <div class="control-item">
+                  <span class="control-label">Bar Color</span>
+                  <div class="color-preview-trigger" style="width: 100%; height: 35px;">
+                    <input type="color" id="appearanceBarColor">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 4: Focus Mode -->
+          <div class="appearance-section">
+            <div class="appearance-section-title">Display Behavior</div>
+            <div class="appearance-card" style="background: rgba(59, 130, 246, 0.05); border-color: rgba(59, 130, 246, 0.15);">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                  <div style="font-size: 13px; font-weight: 700; color: #fff;">Focus Mode</div>
+                  <div style="font-size: 10px; color: var(--muted);">Emphasize a specific screen element</div>
+                </div>
+                <label class="toggle" style="transform: scale(0.85);">
+                  <input type="checkbox" id="focusModeEnabled">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="control-item" style="margin-top: 8px;">
+                <span class="control-label">Target Spotlight</span>
+                <select id="focusModeItem" class="premium-input">
+                  <option value="timer">Main Countdown</option>
+                  <option value="notes">Production Notes</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 10px; margin-top: 10px; padding-bottom: 20px;">
+            <button id="saveAppearanceBtn" class="btn btn-primary" style="flex: 2; height: 45px; font-weight: 800;">APPLY THEME</button>
+            <button id="resetAppearanceBtn" class="btn btn-secondary" style="flex: 1; height: 45px; opacity: 0.8;">RESET</button>
           </div>
         </div>
 
@@ -1164,6 +1295,13 @@
                 <span style="font-size: 13px;">Show Notes</span>
                 <label class="toggle" style="transform: scale(0.85);">
                   <input type="checkbox" id="showNotesToggle" checked>
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="setting-row" style="margin: 0; padding: 0;">
+                <span style="font-size: 13px; color: var(--accent);">Show Clock</span>
+                <label class="toggle" style="transform: scale(0.85);">
+                  <input type="checkbox" id="showClockToggle">
                   <span class="slider"></span>
                 </label>
               </div>

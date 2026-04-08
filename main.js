@@ -50,12 +50,15 @@ let config = {
       notesSize: "4.5vh",
       notesColor: "#ffffff",
       notesFont: "system-ui",
+      clockSize: "17vh",
+      clockColor: "rgba(255, 255, 255, 0.83)",
       barColor: "#3b82f6",
       barHeight: "12px"
     },
     visibility: {
       showTimer: true,
       showBar: true,
+      showClock: false,
       showTitle: true,
       showNotes: true
     },

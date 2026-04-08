@@ -24,6 +24,9 @@
         --notes-color: #ffffff;
         --notes-font: system-ui, -apple-system, sans-serif;
 
+        --clock-size: 17vh;
+        --clock-color: rgba(255, 255, 255, 0.83);
+
         --bar-height: 1.5vh; /* Standard talent bar height */
       }
 
@@ -114,6 +117,16 @@
         transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
         margin: 0;
         line-height: 1;
+      }
+
+      #clock {
+        font-size: var(--clock-size);
+        font-weight: 600;
+        color: var(--clock-color);
+        font-family: var(--timer-font);
+        margin-top: 1.5vh;
+        letter-spacing: 0.05em;
+        display: none; /* Controlled via settings */
       }
 
       .timer-colon {
@@ -378,6 +391,7 @@
       <div class="timer-stack">
         <div id="label"></div>
         <div id="time">00:00</div>
+        <div id="clock">00:00:00 AM</div>
       </div>
 
       <div id="notes-container">

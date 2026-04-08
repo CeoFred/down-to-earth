@@ -167,10 +167,25 @@ window.addEventListener('DOMContentLoaded', async () => {
       redSeg.style.width = `${(redFill / totalMs) * 100}%`;
     }
 
+    function updateProjectorClock() {
+      const clockEl = document.getElementById('clock');
+      if (!clockEl) return;
+      const now = new Date();
+      clockEl.textContent = now.toLocaleTimeString('en-US', { 
+        hour: 'numeric', 
+        minute: '2-digit', 
+        second: '2-digit', 
+        hour12: true 
+      });
+    }
+
     function render({ remainingMs, totalMs, isOvertime, overtimeMs, isPaused, isRunning }) {
       const config = (window.lastConfig || state.config);
-      const vis = config?.settings?.visibility || { showTimer: true, showBar: true, showTitle: true, showNotes: true };
+      const vis = config?.settings?.visibility || { showTimer: true, showBar: true, showTitle: true, showNotes: true, showClock: false };
       const wrapUp = config?.settings?.wrapUp || { yellowMs: 60000, redMs: 30000, flashOnRed: true, flashOnOvertime: true };
+
+      const clockEl = document.getElementById('clock');
+      if (clockEl) clockEl.style.display = vis.showClock ? 'block' : 'none';
 
       const container = document.querySelector('.progress-container');
       const timerStack = document.querySelector('.timer-stack');
@@ -321,6 +336,8 @@ window.addEventListener('DOMContentLoaded', async () => {
         root.style.setProperty('--notes-font', app.notesFont || 'system-ui');
         root.style.setProperty('--bar-color', app.barColor);
         root.style.setProperty('--bar-height', app.barHeight);
+        root.style.setProperty('--clock-size', app.clockSize || '17vh');
+        root.style.setProperty('--clock-color', app.clockColor || 'rgba(255,255,255,0.83)');
       }
       
       const nStr = window.currentNotes || state.customNotes || "";
@@ -424,5 +441,8 @@ window.addEventListener('DOMContentLoaded', async () => {
       applyFocusMode(state.config);
     }
     render(state);
+
+    updateProjectorClock();
+    setInterval(updateProjectorClock, 1000);
   }
 });

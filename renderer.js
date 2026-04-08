@@ -441,6 +441,27 @@ function renderCustomPresets() {
   `).join('');
 }
 
+function updateDashboardClock() {
+  const timeEl = document.getElementById('dashboardClockTime');
+  const zoneEl = document.getElementById('dashboardClockZone');
+  if (!timeEl || !zoneEl) return;
+
+  const now = new Date();
+  timeEl.textContent = now.toLocaleTimeString('en-US', { 
+    hour: 'numeric', 
+    minute: '2-digit', 
+    second: '2-digit', 
+    hour12: true 
+  });
+
+  // Get timezone name (e.g. Africa/Lagos) and abbreviation (e.g. WAT)
+  const zoneName = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const parts = now.toLocaleTimeString('en-US', { timeZoneName: 'short' }).split(' ');
+  const zoneAbbr = parts[parts.length - 1];
+  
+  zoneEl.textContent = `${zoneName.replace(/_/g, ' ').replace(/\//g, ' / ')} (${zoneAbbr})`;
+}
+
 /* ---------------- TIMELINE LOGIC ---------------- */
 let isScrubbing = false;
 
@@ -970,6 +991,12 @@ window.renderState = function(state) {
       
       syncVal('appearanceBarColor', app.barColor);
       syncVal('appearanceBarHeight', app.barHeight);
+
+      syncVal('appearanceClockSize', app.clockSize);
+      syncVal('appearanceClockColor', app.clockColor);
+      
+      const clockHexEl = document.getElementById('appearanceClockColorValue');
+      if (clockHexEl) clockHexEl.value = app.clockColor || 'rgba(255,255,255,0.8)';
     }
     
     // Focus Mode Sync
@@ -992,6 +1019,7 @@ window.renderState = function(state) {
       syncCheck('showBarToggle', vis.showBar);
       syncCheck('showTitleToggle', vis.showTitle);
       syncCheck('showNotesToggle', vis.showNotes);
+      syncCheck('showClockToggle', vis.showClock);
     }
     
     // Sync stage notes across devices
@@ -1610,6 +1638,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       showBar: document.getElementById('showBarToggle')?.checked,
       showTitle: document.getElementById('showTitleToggle')?.checked,
       showNotes: document.getElementById('showNotesToggle')?.checked,
+      showClock: document.getElementById('showClockToggle')?.checked,
     };
     
     const milestones = milestoneStr.split(',')
@@ -1641,6 +1670,8 @@ window.addEventListener("DOMContentLoaded", async () => {
       titleColor: document.getElementById('appearanceTitleColor').value,
       notesSize: document.getElementById('appearanceNotesSize').value,
       notesColor: document.getElementById('appearanceNotesColor').value,
+      clockSize: document.getElementById('appearanceClockSize').value,
+      clockColor: document.getElementById('appearanceClockColor').value,
       barColor: document.getElementById('appearanceBarColor').value,
       barHeight: document.getElementById('appearanceBarHeight').value,
     };
@@ -1667,6 +1698,8 @@ window.addEventListener("DOMContentLoaded", async () => {
         notesSize: "4.5vh",
         notesColor: "#ffffff",
         notesFont: "system-ui",
+        clockSize: "17vh",
+        clockColor: "rgba(255, 255, 255, 0.83)",
         barColor: "#3b82f6",
         barHeight: "12px"
       },
@@ -1814,6 +1847,10 @@ const setupProjectionDeck = () => {
       showToast("Bringing Projection to Front", "info");
     };
   }
+
+  // Initial Clock Start
+  updateDashboardClock();
+  setInterval(updateDashboardClock, 1000);
 };
 
 // Ensure initialization happens as soon as possible
