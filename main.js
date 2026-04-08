@@ -170,9 +170,10 @@ io.on('connection', (socket) => {
       projectorStatus: getProjectorStatus() // Add initial hardware status
     });
 
-    socket.on('timer:controlProjector', async (action, data = {}) => {
+    socket.on('timer:controlProjector', async (action, incomingData) => {
       if (!authState) return socket.emit('auth:error', 'Authentication required');
       
+      const data = incomingData || {};
       console.log(`[Remote] Projector Command: ${action}`, data);
       let success = false;
       const displayId = data.displayId;
@@ -204,12 +205,18 @@ io.on('connection', (socket) => {
           }
           success = true;
           break;
-        case 'bringToFront':
+        case 'focus': // Changed from bringToFront to match renderer
           if (projectorWindow) {
             projectorWindow.show();
             projectorWindow.focus();
           }
           success = true;
+          break;
+        case 'setDisplay':
+          if (displayId) {
+            createProjectorWindow(displayId);
+            success = true;
+          }
           break;
       }
       
