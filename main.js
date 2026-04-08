@@ -33,11 +33,11 @@ const remoteDevices = new Map();
 const configPath = path.join(app.getPath('userData'), 'countdown-config.json');
 let config = {
   customPresets: [],
-  playlists: [],
   settings: {
     autoAdvance: false,
     ttsEnabled: true,
     alarmSound: 'pulse',
+    playlists: [],               // The scheduled rundown lineup
     milestones: [600, 300, 120, 60, 30], // Defaults: 10m, 5m, 2m, 1m, 30s
     readPlaylistTitle: true,
     appearance: {
@@ -89,7 +89,15 @@ function loadConfig() {
       // Deep merge settings
       config.settings = { ...config.settings, ...loaded.settings };
       config.customPresets = loaded.customPresets || [];
-      config.playlists = loaded.playlists || [];
+      
+      // MIGRATION: Move top-level playlists to settings.playlists if needed
+      if (loaded.playlists && loaded.playlists.length > 0) {
+        config.settings.playlists = loaded.playlists;
+        saveConfig();
+        console.log("[Migration] Moved playlists into settings.");
+      } else if (!config.settings.playlists) {
+        config.settings.playlists = [];
+      }
       
       // Ensure PIN exists
       if (!config.settings.securityPin) {
@@ -763,7 +771,7 @@ ipcMain.handle("timer:setTitle", (event, title) => {
   customTitle = title || "";
   broadcast("timer:title", { title: customTitle });
 });
-ipcMain.handle("timer:saveSettings", (event, settings) => {
+ipcMain.handle('timer:saveSettings', (event, settings) => {
   config.settings = { ...config.settings, ...settings };
   saveConfig();
   broadcast('timer:configUpdate', config);

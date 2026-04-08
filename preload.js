@@ -11,8 +11,6 @@ contextBridge.exposeInMainWorld('timerAPI', {
   getState: () => ipcRenderer.invoke('timer:getState'),
   onUpdate: (cb) => ipcRenderer.on('timer:update', (_e, data) => cb(data)),
   onFinished: (cb) => ipcRenderer.on('timer:finished', (_e, data) => cb(data)),
-  savePreset: (preset) => ipcRenderer.invoke("timer:savePreset", preset),
-  deletePreset: (id) => ipcRenderer.invoke("timer:deletePreset", id),
   saveSettings: (settings) => ipcRenderer.invoke("timer:saveSettings", settings),
   setNotes: (notes) => ipcRenderer.invoke("timer:setNotes", notes),
   onConfigUpdate: (cb) => ipcRenderer.on("timer:configUpdate", (_e, data) => cb(data)),

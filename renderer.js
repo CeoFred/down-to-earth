@@ -175,6 +175,8 @@ if (typeof window.timerAPI === 'undefined') {
     onTitle: (cb) => socket.on('timer:title', (data) => cb(data)),
     savePreset: (p) => socket.emit('timer:savePreset', p),
     deletePreset: (id) => socket.emit('timer:deletePreset', id),
+    savePlaylist: (pl) => socket.emit('timer:savePlaylist', pl),
+    saveSettings: (s) => socket.emit('timer:saveSettings', s),
     onConfigUpdate: (cb) => {
       socket.on('timer:configUpdate', (config) => {
         if (typeof window.appConfig !== 'undefined') window.appConfig = config;
@@ -401,8 +403,7 @@ function playAlarm() {
 
 /* ---------------- CORE TIMER & WORKFLOW LOGIC ---------------- */
 let currentState = { remainingMs: 0, totalMs: 0, isRunning: false, isPaused: false, isOvertime: false };
-let appConfig = { customPresets: [], playlists: [], settings: {} };
-let playlistQueue = [];
+let appConfig = { customPresets: [], settings: { playlists: [] } };
 let currentPlaylistIndex = -1;
 
 function formatTime(ms) {
@@ -697,7 +698,9 @@ function renderPlaylist() {
   const container = document.getElementById('playlistContainer');
   if (!container) return;
 
-  if (playlistQueue.length === 0) {
+  const playlists = appConfig.settings.playlists || [];
+
+  if (playlists.length === 0) {
     container.innerHTML = `
       <div style="text-align: center; color: var(--muted); padding: 40px 20px; font-size: 12px; background: rgba(255,255,255,0.02); border-radius: 12px;">
         Playlist is empty. Add timers to get started.
@@ -706,7 +709,7 @@ function renderPlaylist() {
     return;
   }
 
-  container.innerHTML = playlistQueue.map((item, index) => {
+  container.innerHTML = playlists.map((item, index) => {
     const isActive = index === currentPlaylistIndex;
     const isPaused = currentState?.isPaused;
     
@@ -774,7 +777,8 @@ window.deletePreset = (id) => {
 
 window.startPlaylistAt = (index) => {
   currentPlaylistIndex = index;
-  const item = playlistQueue[index];
+  const playlists = appConfig.settings.playlists || [];
+  const item = playlists[index];
   if (item) {
     document.getElementById('minutes').value = item.minutes;
     document.getElementById('seconds').value = item.seconds;
@@ -814,23 +818,28 @@ window.removeFromPlaylist = (index) => {
     currentPlaylistIndex--;
   }
 
-  playlistQueue.splice(index, 1);
-  renderPlaylist();
+  const playlists = [...(appConfig.settings.playlists || [])];
+  playlists.splice(index, 1);
+  window.timerAPI.saveSettings({ playlists });
 };
 
 window.updatePlaylistTitle = (index, newTitle) => {
-  if (playlistQueue[index]) {
-    playlistQueue[index].title = newTitle;
+  const playlists = [...(appConfig.settings.playlists || [])];
+  if (playlists[index]) {
+    playlists[index].title = newTitle;
     if (currentPlaylistIndex === index) {
       window.timerAPI.setTitle(newTitle);
     }
+    window.timerAPI.saveSettings({ playlists });
   }
 };
 
 window.updatePlaylistTime = (index, mins, secs) => {
-  if (playlistQueue[index]) {
-    playlistQueue[index].minutes = parseInt(mins) || 0;
-    playlistQueue[index].seconds = Math.max(0, Math.min(59, parseInt(secs) || 0));
+  const playlists = [...(appConfig.settings.playlists || [])];
+  if (playlists[index]) {
+    playlists[index].minutes = parseInt(mins) || 0;
+    playlists[index].seconds = Math.max(0, Math.min(59, parseInt(secs) || 0));
+    window.timerAPI.saveSettings({ playlists });
   }
 };
 
@@ -1219,10 +1228,13 @@ window.addEventListener("DOMContentLoaded", async () => {
         const seconds = parseInt(secsInput.value) || 0;
 
         const newItem = { title, notes, minutes, seconds };
-        playlistQueue.push(newItem);
-        renderPlaylist();
+        
+        const playlists = [...(appConfig.settings.playlists || [])];
+        playlists.push(newItem);
+        window.timerAPI.saveSettings({ playlists });
+        
         closePlaylistModal();
-        showToast(`Added "${title}" to Playlist`, "success");
+        showToast(`"${title}" added to lineup`);
       });
     }
 
@@ -1288,9 +1300,16 @@ window.addEventListener("DOMContentLoaded", async () => {
   // Setup
   // Non-blocking initial setup
   window.timerAPI.getState().then(state => {
+    // 1. Core State & Config
+    appConfig = state.config;
     window.renderState(state);
     
-    // Initialize Projection Deck if status is available
+    // 2. Clear initial views based on loaded config
+    renderPlaylist();
+    renderMessages();
+    renderCustomPresets();
+
+    // 3. Initialize Projection Deck if status is available
     if (state?.projectorStatus) {
       window.renderProjectorStatus(state.projectorStatus);
     }
@@ -1311,6 +1330,9 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   window.timerAPI.onConfigUpdate((config) => {
     appConfig = config;
+    
+    // Centralized View Refresh
+    renderPlaylist();
     renderCustomPresets();
     renderMessages();
     updateConnectivityUI(config);
@@ -1553,26 +1575,11 @@ window.addEventListener("DOMContentLoaded", async () => {
     showToast(`Preset "${title}" Saved`);
   });
 
-  document.getElementById('addToPlaylistBtn')?.addEventListener('click', () => {
-    const mins = parseInt(document.getElementById('minutes')?.value) || 0;
-    const secs = parseInt(document.getElementById('seconds')?.value) || 0;
-    const yEl = document.getElementById('overrideYellow');
-    const rEl = document.getElementById('overrideRed');
-    const yVal = yEl ? parseInt(yEl.value) : NaN;
-    const rVal = rEl ? parseInt(rEl.value) : NaN;
-    const title = document.getElementById('customTitle')?.value || "Unnamed Session";
-
-    const item = { minutes: mins, seconds: secs, title };
-    if (!isNaN(yVal)) item.yellowSec = yVal;
-    if (!isNaN(rVal)) item.redSec = rVal;
-
-    playlistQueue.push(item);
-    renderPlaylist();
-    showToast(`Item "${title}" added to Playlist`);
-  });
+  // Previous addToPlaylistBtn listener was here, removed as it reached the wrong IDs
 
   document.getElementById('nextBtn')?.addEventListener('click', () => {
-    if (currentPlaylistIndex < playlistQueue.length - 1) {
+    const playlists = appConfig.settings.playlists || [];
+    if (currentPlaylistIndex < playlists.length - 1) {
       window.startPlaylistAt(currentPlaylistIndex + 1);
     }
   });
@@ -1584,9 +1591,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   document.getElementById('clearPlaylistBtn')?.addEventListener('click', () => {
-    playlistQueue = [];
     currentPlaylistIndex = -1;
-    renderPlaylist();
+    window.timerAPI.saveSettings({ playlists: [] });
     showToast("Lineup Cleared", "warning");
   });
 
