@@ -276,10 +276,23 @@ io.on('connection', (socket) => {
 
   socket.on('timer:start', (data) => {
     if (!authState) return socket.emit('auth:error', 'Authentication required');
-    // Support both direct ms (legacy) and production payload {ms, wrapUp}
+    
     const ms = (typeof data === 'object' && data !== null) ? data.ms : data;
     const wrapUp = (typeof data === 'object' && data !== null) ? data.wrapUp : null;
-    startTimer(ms, wrapUp);
+    const index = (typeof data === 'object' && data !== null) ? data.index : -1;
+    const title = (typeof data === 'object' && data !== null) ? data.title : "";
+    const notes = (typeof data === 'object' && data !== null) ? data.notes : "";
+
+    if (title) {
+      customTitle = title;
+      broadcast('timer:title', { title });
+    }
+    if (notes !== undefined) {
+      customNotes = notes;
+      broadcast('timer:notes', { notes });
+    }
+
+    startTimer(ms, wrapUp, index);
   });
 
   socket.on('timer:pause', () => {
