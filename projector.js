@@ -176,7 +176,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       });
     }
 
-    function render({ remainingMs, totalMs, isOvertime, overtimeMs, isPaused, isRunning }) {
+    function render({ remainingMs, totalMs, isOvertime, overtimeMs, isPaused, isRunning, currentPlaylistIndex, currentTitle }) {
       const config = (window.lastConfig || state.config);
       const vis = config?.settings?.visibility || { showTimer: true, showBar: true, showTitle: true, showNotes: true, showClock: false };
       const wrapUp = config?.settings?.wrapUp || { yellowMs: 60000, redMs: 30000, flashOnRed: true, flashOnOvertime: true };
@@ -198,24 +198,60 @@ window.addEventListener('DOMContentLoaded', async () => {
         
         bgLayer.classList.add('overtime');
         bgLayer.classList.remove('urgency');
-        document.body.classList.add('overtime-pulse');
+        timeDisplay.classList.add('overtime-pulse');
 
         if (wrapUp.flashOnOvertime) {
           container.classList.add('flashing-indefinite');
         }
         
         setSegments(0, totalMs, wrapUp);
+
+        // Auto-Advance High Fidelity Transition
+        const isAutoAdvance = config?.settings?.autoAdvance;
+        const isTransitioning = isOvertime && isAutoAdvance && overtimeMs < 10000;
+        const nextIdx = (currentPlaylistIndex !== undefined ? currentPlaylistIndex : -1) + 1;
+        const nextItem = config?.settings?.playlists?.[nextIdx];
+
+        if (isTransitioning) {
+          document.body.classList.add('transition-mode');
+          const nextTextEl = document.getElementById('next-title-text');
+          if (nextTextEl) {
+            nextTextEl.textContent = nextItem ? nextItem.title : "End of Show";
+          }
+        } else {
+          document.body.classList.remove('transition-mode');
+        }
       } else {
-        if (titleEl) titleEl.style.display = vis.showTitle ? 'block' : 'none';
+        if (titleEl) {
+          titleEl.style.display = vis.showTitle ? 'block' : 'none';
+          if (currentTitle !== undefined) titleEl.textContent = currentTitle;
+        }
         if (timerStack) timerStack.style.display = vis.showTimer ? 'flex' : 'none';
         label.style.display = 'block';
         label.textContent = '';
         timeDisplay.style.display = vis.showTimer ? 'block' : 'none';
         timeDisplay.innerHTML = formatTimeHTML(remainingMs);
         timeDisplay.classList.remove('overtime');
+        timeDisplay.classList.remove('overtime-pulse');
         
-        document.body.classList.remove('overtime-pulse');
+        document.body.classList.remove('transition-mode');
         bgLayer.classList.remove('overtime');
+
+        // Segment Entrance Animation Trigger
+        if (isRunning && remainingMs > 0 && !window.entranceTriggered) {
+          window.entranceTriggered = true;
+          const wrapper = document.querySelector('.content-wrapper');
+          if (wrapper) {
+            wrapper.classList.remove('new-segment-entrance');
+            void wrapper.offsetWidth; // Force reflow
+            wrapper.classList.add('new-segment-entrance');
+          }
+        } 
+        
+        // Reset trigger when timer stops or hits overtime (preparing for next segment)
+        if (!isRunning || isOvertime) {
+          window.entranceTriggered = false;
+        }
         if (container) container.classList.remove('flashing-indefinite');
 
         // Urgency Logic (< 60s)

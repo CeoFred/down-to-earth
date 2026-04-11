@@ -26,6 +26,7 @@ let isPaused = false;
 let customTitle = "";
 let customNotes = "";
 let activeWrapUp = null; // Current timer's wrap-up overrides
+let currentPlaylistIndex = -1; // Index in config.settings.playlists
 let activeTunnelProcess = null;
 const remoteDevices = new Map();
 
@@ -625,32 +626,19 @@ function broadcastProjectorStatus() {
   broadcast('timer:projectorStatus', status);
 }
 
-function startTimer(ms, wrapUpOverride = null) {
+function runTimerInterval() {
   clearInterval(timerInterval);
 
-  if (typeof ms === 'number') {
-    remainingMs = ms;
-    totalMs = ms; // Store initial duration
-    overtimeMs = 0;
-    isOvertime = false;
-    activeWrapUp = wrapUpOverride;
-  }
-
-  if (remainingMs <= 0) {
-    remainingMs = 0;
-    isOvertime = true;
-    overtimeMs = 0;
-  }
-
-  isRunning = true;
-  isPaused = false;
-
-  broadcast('timer:update', { remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused });
+  // Broadcast state immediately so clients don't wait 1s for the first tick
+  broadcast('timer:update', { 
+    remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused,
+    currentPlaylistIndex,
+    currentTitle: getRunningItemTitle()
+  });
 
   timerInterval = setInterval(() => {
     if (!isOvertime) {
       remainingMs -= 1000;
-
       if (remainingMs <= 0) {
         remainingMs = 0;
         isOvertime = true;
@@ -659,10 +647,69 @@ function startTimer(ms, wrapUpOverride = null) {
       }
     } else {
       overtimeMs += 1000;
+      // Auto-Advance Trigger (at 10s overtime)
+      if (config.settings.autoAdvance && overtimeMs >= 10000) {
+        processAutoAdvance();
+      }
     }
 
-    broadcast('timer:update', { remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused });
+    broadcast('timer:update', { 
+      remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused,
+      currentPlaylistIndex,
+      currentTitle: getRunningItemTitle()
+    });
   }, 1000);
+}
+
+function getRunningItemTitle() {
+  if (currentPlaylistIndex >= 0 && config.settings.playlists?.[currentPlaylistIndex]) {
+    return config.settings.playlists[currentPlaylistIndex].title;
+  }
+  return customTitle;
+}
+
+function processAutoAdvance() {
+  const nextIdx = currentPlaylistIndex + 1;
+  const playlists = config.settings.playlists || [];
+  
+  if (nextIdx < playlists.length && config.settings.autoAdvance) {
+    const nextItem = playlists[nextIdx];
+    const itemMs = (nextItem.minutes * 60 + nextItem.seconds) * 1000;
+    
+    let wrapUp = null;
+    if (nextItem.yellowSec || nextItem.redSec) {
+      wrapUp = {
+        yellowMs: (nextItem.yellowSec || 60) * 1000,
+        redMs: (nextItem.redSec || 30) * 1000,
+        flashOnRed: config.settings.wrap_up?.flashOnRed ?? true,
+        flashOnOvertime: config.settings.wrap_up?.flashOnOvertime ?? true,
+        soundOnYellow: config.settings.wrap_up?.soundOnYellow ?? false,
+        soundOnRed: config.settings.wrap_up?.soundOnRed ?? true
+      };
+    }
+    
+    startTimer(itemMs, wrapUp, nextIdx);
+  } else {
+    resetTimer();
+  }
+}
+
+function startTimer(ms, wrapUpOverride = null, index = -1) {
+  currentPlaylistIndex = index;
+  if (typeof ms === 'number') {
+    remainingMs = ms;
+    totalMs = ms;
+    overtimeMs = 0;
+    isOvertime = false;
+    activeWrapUp = wrapUpOverride;
+  }
+  if (remainingMs <= 0) {
+    remainingMs = 0;
+    isOvertime = true;
+  }
+  isRunning = true;
+  isPaused = false;
+  runTimerInterval();
 }
 
 function pauseTimer() {
@@ -673,29 +720,10 @@ function pauseTimer() {
 }
 
 function resumeTimer() {
-  if (isRunning) return; // already running
-
+  if (isRunning) return; 
   isRunning = true;
   isPaused = false;
-
-  broadcast('timer:update', { remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused });
-
-  timerInterval = setInterval(() => {
-    if (!isOvertime) {
-      remainingMs -= 1000;
-
-      if (remainingMs <= 0) {
-        remainingMs = 0;
-        isOvertime = true;
-        overtimeMs = 0;
-        broadcast('timer:finished', {});
-      }
-    } else {
-      overtimeMs += 1000;
-    }
-
-    broadcast('timer:update', { remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused });
-  }, 1000);
+  runTimerInterval();
 }
 
 function resetTimer() {
@@ -723,10 +751,16 @@ function seekTimer(ms) {
 }
 
 ipcMain.handle('timer:start', (event, data) => {
-  // Support both raw ms (legacy) and structured payload {ms, wrapUp}
   const ms = (typeof data === 'object' && data !== null) ? data.ms : data;
   const wrapUp = (typeof data === 'object' && data !== null) ? data.wrapUp : null;
-  startTimer(ms, wrapUp);
+  const index = (typeof data === 'object' && data !== null) ? data.index : -1;
+  const title = (typeof data === 'object' && data !== null) ? data.title : "";
+  const notes = (typeof data === 'object' && data !== null) ? data.notes : "";
+  
+  if (title) customTitle = title;
+  if (notes) customNotes = notes;
+  
+  startTimer(ms, wrapUp, index);
 });
 
 ipcMain.handle('timer:pause', () => {

@@ -143,6 +143,76 @@
         font-size: 4vh; /* Slightly smaller title when notes are active */
       }
 
+      /* Transition Mode States */
+      #next-item-preview {
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        gap: 1vh;
+        animation: slide-up 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .next-label {
+        font-size: 8vh;
+        text-transform: uppercase;
+        letter-spacing: 0.2em;
+        color: var(--accent-color);
+        font-weight: 800;
+        opacity: 0.9;
+        margin-bottom: 2vh;
+      }
+
+      .next-title {
+        font-size: clamp(60px, 18vw, 22vh);
+        font-weight: 900;
+        color: #fff;
+        text-align: center;
+        line-height: 1.05;
+        max-width: 95vw;
+        text-shadow: 0 20px 60px rgba(0,0,0,0.7);
+      }
+
+      body.transition-mode #next-item-preview {
+        display: flex;
+      }
+
+      body.transition-mode #time {
+        font-size: 15vw !important; /* Shrunk during transition but readable from afar */
+        opacity: 0.8;
+        margin-top: 3vh;
+        order: 2; /* Put timer below next title for better layout */
+      }
+
+      body.transition-mode #title,
+      body.transition-mode #notes-container,
+      body.transition-mode .progress-container,
+      body.transition-mode #label,
+      body.transition-mode #clock {
+        display: none !important;
+      }
+
+      @keyframes slide-up {
+        from { opacity: 0; transform: translateY(30px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      @keyframes stage-entrance {
+        0% { 
+          opacity: 0; 
+          transform: translateY(6vh) scale(0.92);
+          filter: blur(10px);
+        }
+        100% { 
+          opacity: 1; 
+          transform: translateY(0) scale(1);
+          filter: blur(0);
+        }
+      }
+
+      .new-segment-entrance {
+        animation: stage-entrance 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+
       .timer-stack {
         display: flex;
         flex-direction: column;
@@ -407,6 +477,12 @@
 
       <div id="notes-container">
         <p id="notes-content"></p>
+      </div>
+
+      <!-- Auto-Advance Preview -->
+      <div id="next-item-preview">
+        <div class="next-label">Up Next</div>
+        <div id="next-title-text" class="next-title">Opening Segment</div>
       </div>
     </div>
 

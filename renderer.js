@@ -824,7 +824,13 @@ window.startPlaylistAt = (index) => {
 
     window.timerAPI.setTitle(item.title);
     window.timerAPI.setNotes(item.notes || "");
-    window.timerAPI.start({ ms: (item.minutes * 60 + item.seconds) * 1000, wrapUp });
+    window.timerAPI.start({ 
+      ms: (item.minutes * 60 + item.seconds) * 1000, 
+      wrapUp,
+      index: index,
+      title: item.title,
+      notes: item.notes || ""
+    });
     renderPlaylist();
     // Speak title if enabled
     if (appConfig.settings.readPlaylistTitle) speak(item.title);
@@ -946,8 +952,24 @@ window.renderProjectorStatus = function(status) {
 
 window.renderState = function(state) {
   if (!state) return;
-  const { remainingMs, totalMs, isRunning, isPaused, isOvertime, overtimeMs, config, projectorStatus } = state;
+  const { remainingMs, totalMs, isRunning, isPaused, isOvertime, overtimeMs, config, projectorStatus, currentPlaylistIndex: backendIdx } = state;
   currentState = state;
+
+  if (backendIdx !== undefined && backendIdx !== currentPlaylistIndex) {
+    currentPlaylistIndex = backendIdx;
+    renderPlaylist();
+    
+    // Auto-populate inputs if running from playlist
+    if (currentPlaylistIndex >= 0 && config?.settings?.playlists?.[currentPlaylistIndex]) {
+        const item = config.settings.playlists[currentPlaylistIndex];
+        const minEl = document.getElementById('minutes');
+        const secEl = document.getElementById('seconds');
+        const titleEl = document.getElementById('customTitle');
+        if (minEl && document.activeElement !== minEl) minEl.value = item.minutes;
+        if (secEl && document.activeElement !== secEl) secEl.value = item.seconds;
+        if (titleEl && document.activeElement !== titleEl) titleEl.value = item.title;
+    }
+  }
 
   if (projectorStatus) window.renderProjectorStatus(projectorStatus);
   
