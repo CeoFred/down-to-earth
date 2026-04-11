@@ -218,8 +218,18 @@ window.addEventListener('DOMContentLoaded', async () => {
           if (nextTextEl) {
             nextTextEl.textContent = nextItem ? nextItem.title : "End of Show";
           }
+
+          // Update transition progress bar
+          const progressFill = document.getElementById('transition-progress-fill');
+          if (progressFill) {
+            const percent = Math.min(100, (overtimeMs / 10000) * 100);
+            progressFill.style.width = `${percent}%`;
+          }
         } else {
           document.body.classList.remove('transition-mode');
+          // Safety: reset progress bar when not transitioning
+          const progressFill = document.getElementById('transition-progress-fill');
+          if (progressFill) progressFill.style.width = '0%';
         }
       } else {
         if (titleEl) {
