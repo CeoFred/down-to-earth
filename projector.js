@@ -14,10 +14,7 @@ function formatTimeHTML(ms) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
 
-  return `${String(minutes).padStart(2, "0")}<span class="timer-colon">:</span>${String(seconds).padStart(
-    2,
-    "0"
-  )}`;
+  return `${String(minutes).padStart(2, "0")}<span class="timer-symbol">:</span>${String(seconds).padStart(2, "0")}`;
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -195,13 +192,13 @@ window.addEventListener('DOMContentLoaded', async () => {
         if (timerStack) timerStack.style.display = vis.showTimer ? 'flex' : 'none';
         label.style.display = 'none';
         timeDisplay.style.display = vis.showTimer ? 'block' : 'none';
-        timeDisplay.innerHTML = `<span style="font-size: 0.8em; vertical-align: middle; margin-right: 0.1em; opacity: 0.8;">-</span>${formatTimeHTML(overtimeMs)}`;
+        timeDisplay.innerHTML = `<span class="timer-symbol">-</span>${formatTimeHTML(overtimeMs)}`;
         timeDisplay.classList.add('overtime');
         timeDisplay.classList.remove('pulsing');
         
         bgLayer.classList.add('overtime');
         bgLayer.classList.remove('urgency');
-        document.body.classList.add('shake');
+        document.body.classList.add('overtime-pulse');
 
         if (wrapUp.flashOnOvertime) {
           container.classList.add('flashing-indefinite');
@@ -217,7 +214,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         timeDisplay.innerHTML = formatTimeHTML(remainingMs);
         timeDisplay.classList.remove('overtime');
         
-        document.body.classList.remove('shake');
+        document.body.classList.remove('overtime-pulse');
         bgLayer.classList.remove('overtime');
         if (container) container.classList.remove('flashing-indefinite');
 

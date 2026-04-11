@@ -129,9 +129,9 @@
         display: none; /* Controlled via settings */
       }
 
-      .timer-colon {
+      .timer-symbol {
         display: inline-block;
-        transform: translateY(-0.06em); /* Nudge up visually */
+        transform: translateY(-0.06em); /* Nudge up visually to match digit midline */
         margin: 0 0.01em;
       }
 
@@ -233,6 +233,17 @@
       }
       .flashing-indefinite {
         animation: flash-indefinite 1s infinite alternate ease-in-out;
+      }
+
+      @keyframes heartbeat {
+        0% { transform: scale(1); }
+        14% { transform: scale(1.08); }
+        28% { transform: scale(1); }
+        42% { transform: scale(1.08); }
+        70% { transform: scale(1); }
+      }
+      .overtime-pulse {
+        animation: heartbeat 1.2s infinite ease-in-out !important;
       }
 
       /* ⚡️ Flash & Shake Signaling */
