@@ -26,19 +26,19 @@ const downloads = {
     label: "Download for macOS",
     detail: "Universal DMG for Apple Silicon and Intel Macs",
     size: "202 MB",
-    href: `${releaseDownloadBase}/Down%20to%20Earth-1.1.0-mac-universal.dmg`,
+    href: `https://github.com/CeoFred/down-to-earth/releases/download/1.5.0/Down.to.Earth-1.1.0-mac-universal.zip`,
   },
   macArm: {
     label: "Apple Silicon DMG",
     detail: "Smaller build for M-series Macs",
     size: "114 MB",
-    href: `${releaseDownloadBase}/Down%20to%20Earth-1.1.0-mac-arm64.dmg`,
+    href: `https://github.com/CeoFred/down-to-earth/releases/download/1.5.0/Down.to.Earth-1.0.0-arm64-mac.zip`,
   },
   windows: {
     label: "Download for Windows",
     detail: "Windows x64 installer",
     size: "96 MB",
-    href: `${releaseDownloadBase}/Down%20to%20Earth-1.1.0-win-x64.exe`,
+    href: `https://github.com/CeoFred/down-to-earth/releases/download/1.5.0/Down.to.Earth-1.1.0-win-x64.exe`,
   },
 }
 
