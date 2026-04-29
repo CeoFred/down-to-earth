@@ -21,6 +21,28 @@ window.addEventListener('DOMContentLoaded', async () => {
   const isRemote = (typeof window.timerAPI === 'undefined');
   
   if (isRemote) {
+    if (typeof io === 'undefined') {
+      const overlay = document.getElementById('remoteAuthOverlay');
+      const title = overlay?.querySelector('h2');
+      const message = overlay?.querySelector('p');
+      const input = document.getElementById('remotePinInput');
+      const submitBtn = document.getElementById('authSubmitBtn');
+      const currentPath = window.location.pathname || '/projector';
+      const servedUrl = `http://localhost:8321${currentPath.endsWith('/projector.html') ? '/projector' : currentPath}`;
+
+      if (overlay) overlay.style.display = 'flex';
+      if (title) title.textContent = 'Projector Not Connected';
+      if (message) {
+        message.textContent = `This page was opened directly from disk. Start Down to Earth, then open ${servedUrl}.`;
+      }
+      if (input) input.style.display = 'none';
+      if (submitBtn) {
+        submitBtn.textContent = 'Waiting for Host App';
+        submitBtn.disabled = true;
+      }
+      return;
+    }
+
     const socket = io();
     window.timerAPI = {
       getState: () => new Promise(resolve => {
@@ -104,6 +126,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     let lastZone = 'green';
     let audioCtx = null;
     let isFlashActive = false;
+    let fitRaf = null;
 
     function playBeep(freq = 880, duration = 0.15) {
       try {
@@ -176,10 +199,10 @@ window.addEventListener('DOMContentLoaded', async () => {
       });
     }
 
-    function render({ remainingMs, totalMs, isOvertime, overtimeMs, isPaused, isRunning, currentPlaylistIndex, currentTitle }) {
+    function render({ remainingMs, totalMs, isOvertime, overtimeMs, isPaused, isRunning, currentPlaylistIndex, currentTitle, activeWrapUp }) {
       const config = (window.lastConfig || state.config);
       const vis = config?.settings?.visibility || { showTimer: true, showBar: true, showTitle: true, showNotes: true, showClock: false };
-      const wrapUp = config?.settings?.wrapUp || { yellowMs: 60000, redMs: 30000, flashOnRed: true, flashOnOvertime: true };
+      const wrapUp = activeWrapUp || config?.settings?.wrapUp || { yellowMs: 60000, redMs: 30000, flashOnRed: true, flashOnOvertime: true };
 
       const clockEl = document.getElementById('clock');
       if (clockEl) clockEl.style.display = vis.showClock ? 'block' : 'none';
@@ -189,7 +212,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
       if (isOvertime) {
         if (titleEl) titleEl.style.display = 'none';
-        if (timerStack) timerStack.style.display = vis.showTimer ? 'flex' : 'none';
+        if (timerStack) timerStack.style.display = (vis.showTimer || vis.showClock) ? 'flex' : 'none';
         label.style.display = 'none';
         timeDisplay.style.display = vis.showTimer ? 'block' : 'none';
         timeDisplay.innerHTML = `<span class="timer-symbol">-</span>${formatTimeHTML(overtimeMs)}`;
@@ -217,6 +240,7 @@ window.addEventListener('DOMContentLoaded', async () => {
           const nextTextEl = document.getElementById('next-title-text');
           if (nextTextEl) {
             nextTextEl.textContent = nextItem ? nextItem.title : "End of Show";
+            scheduleLayoutFit();
           }
 
           // Update transition progress bar
@@ -235,9 +259,10 @@ window.addEventListener('DOMContentLoaded', async () => {
         if (titleEl) {
           titleEl.style.display = vis.showTitle ? 'block' : 'none';
           if (currentTitle !== undefined) titleEl.textContent = currentTitle;
+          scheduleLayoutFit();
         }
-        if (timerStack) timerStack.style.display = vis.showTimer ? 'flex' : 'none';
-        label.style.display = 'block';
+        if (timerStack) timerStack.style.display = (vis.showTimer || vis.showClock) ? 'flex' : 'none';
+        label.style.display = vis.showTimer ? 'block' : 'none';
         label.textContent = '';
         timeDisplay.style.display = vis.showTimer ? 'block' : 'none';
         timeDisplay.innerHTML = formatTimeHTML(remainingMs);
@@ -309,8 +334,8 @@ window.addEventListener('DOMContentLoaded', async () => {
       // Reset rich styles
       content.className = '';
       content.style.color = '';
-      document.body.classList.remove('focus-notes', 'has-notes');
-      content.style.fontSize = ''; // reset to CSS variable
+      content.style.fontSize = '';
+      document.body.classList.remove('message-focus-notes', 'has-notes');
 
       if (notes && vis.showNotes) {
         let text = "";
@@ -320,7 +345,7 @@ window.addEventListener('DOMContentLoaded', async () => {
           if (notes.bold) content.classList.add('msg-bold');
           if (notes.caps) content.classList.add('msg-caps');
           if (notes.flash) content.classList.add('msg-flash');
-          if (notes.focus) document.body.classList.add('focus-notes');
+          if (notes.focus) document.body.classList.add('message-focus-notes');
           if (notes.color) content.style.color = notes.color;
         } else {
           text = notes;
@@ -330,33 +355,104 @@ window.addEventListener('DOMContentLoaded', async () => {
           content.textContent = text;
           notesContainer.classList.add('active');
           document.body.classList.add('has-notes');
-
-          // Dynamic Scaling (Delayed to allow layout/transitions to finish)
-          setTimeout(() => fitNotesText(content), 50);
+          scheduleLayoutFit();
         } else {
           notesContainer.classList.remove('active');
+          scheduleLayoutFit();
         }
       } else {
         notesContainer.classList.remove('active');
+        scheduleLayoutFit();
       }
     }
 
-    function fitNotesText(el) {
-      const parent = el.parentElement;
+    function parsePixelValue(value) {
+      const parsed = parseFloat(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    function fitTextToBox(el, options = {}) {
+      if (!el || el.offsetParent === null) return;
+
+      const parent = options.parent || el.parentElement;
       if (!parent) return;
 
-      const maxBoxHeight = parent.offsetHeight;
-      const originalSizeVal = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--notes-size')) || 4.5;
-      const unit = getComputedStyle(document.documentElement).getPropertyValue('--notes-size').includes('vh') ? 'vh' : 'vw';
-      
-      let fontSize = originalSizeVal;
-      el.style.fontSize = fontSize + unit;
+      el.style.fontSize = '';
+      const computed = getComputedStyle(el);
+      const basePx = parsePixelValue(computed.fontSize);
+      if (!basePx) return;
 
-      // Incrementally shrink font size until it fits OR hits 1.5vh minimum (very small)
-      while (el.scrollHeight > maxBoxHeight && fontSize > 1.5) {
-        fontSize -= 0.1;
-        el.style.fontSize = fontSize + unit;
+      const minPx = options.minPx || 18;
+      const maxPx = options.maxPx || basePx;
+      const parentStyle = getComputedStyle(parent);
+      const widthPadding = parsePixelValue(parentStyle.paddingLeft) + parsePixelValue(parentStyle.paddingRight);
+      const heightPadding = parsePixelValue(parentStyle.paddingTop) + parsePixelValue(parentStyle.paddingBottom);
+      const maxWidth = Math.max(1, parent.clientWidth - widthPadding);
+      const maxHeight = Math.max(1, parent.clientHeight - heightPadding);
+
+      let low = minPx;
+      let high = Math.min(maxPx, basePx);
+      let best = low;
+
+      for (let i = 0; i < 14; i++) {
+        const mid = (low + high) / 2;
+        el.style.fontSize = `${mid}px`;
+
+        const fitsWidth = el.scrollWidth <= maxWidth + 1;
+        const fitsHeight = el.scrollHeight <= maxHeight + 1;
+
+        if (fitsWidth && fitsHeight) {
+          best = mid;
+          low = mid;
+        } else {
+          high = mid;
+        }
       }
+
+      el.style.fontSize = `${Math.floor(best * 10) / 10}px`;
+    }
+
+    function fitTitleText() {
+      const title = document.getElementById('title');
+      if (!title || title.offsetParent === null || title.textContent.trim() === '') return;
+      fitTextToBox(title, {
+        parent: title,
+        minPx: 20
+      });
+    }
+
+    function fitTransitionTitleText() {
+      const nextTitle = document.getElementById('next-title-text');
+      if (!nextTitle || nextTitle.offsetParent === null || nextTitle.textContent.trim() === '') return;
+      fitTextToBox(nextTitle, {
+        parent: nextTitle,
+        minPx: 24
+      });
+    }
+
+    function fitNotesText() {
+      const content = document.getElementById('notes-content');
+      const container = document.getElementById('notes-container');
+      if (!content || !container || !container.classList.contains('active')) return;
+      fitTextToBox(content, {
+        parent: container,
+        minPx: 18
+      });
+    }
+
+    function fitProjectorLayout() {
+      fitTitleText();
+      fitTransitionTitleText();
+      fitNotesText();
+    }
+
+    function scheduleLayoutFit() {
+      if (fitRaf) cancelAnimationFrame(fitRaf);
+      fitRaf = requestAnimationFrame(() => {
+        fitRaf = null;
+        fitProjectorLayout();
+        setTimeout(fitProjectorLayout, 80);
+      });
     }
 
     function applyAppearance(config) {
@@ -386,6 +482,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       const nStr = window.currentNotes || state.customNotes || "";
       updateNotes(nStr);
       if (window.lastState) render(window.lastState);
+      scheduleLayoutFit();
     }
 
     function applyFocusMode(config) {
@@ -401,7 +498,10 @@ window.addEventListener('DOMContentLoaded', async () => {
         if (el) el.classList.remove('focused-item', 'item-top', 'item-bottom');
       });
 
-      if (!focus.enabled) return;
+      if (!focus.enabled) {
+        scheduleLayoutFit();
+        return;
+      }
 
       body.classList.add('focus-mode');
       
@@ -421,6 +521,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         if (timer) timer.classList.add('item-bottom');
         if (notes) notes.classList.add('item-bottom');
       }
+      scheduleLayoutFit();
     }
 
     window.timerAPI.onUpdate((data) => {
@@ -436,6 +537,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     window.timerAPI.onTitle(({ title }) => {
       const titleElement = document.getElementById('title');
       if (titleElement) titleElement.textContent = title || "";
+      scheduleLayoutFit();
     });
 
     window.timerAPI.onNotes(({ notes }) => {
@@ -484,6 +586,12 @@ window.addEventListener('DOMContentLoaded', async () => {
       applyFocusMode(state.config);
     }
     render(state);
+    scheduleLayoutFit();
+    window.addEventListener('resize', scheduleLayoutFit);
+    window.addEventListener('orientationchange', scheduleLayoutFit);
+    if (document.fonts?.ready) {
+      document.fonts.ready.then(scheduleLayoutFit).catch(() => {});
+    }
 
     updateProjectorClock();
     setInterval(updateProjectorClock, 1000);

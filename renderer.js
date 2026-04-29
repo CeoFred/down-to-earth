@@ -175,7 +175,6 @@ if (typeof window.timerAPI === 'undefined') {
     onTitle: (cb) => socket.on('timer:title', (data) => cb(data)),
     savePreset: (p) => socket.emit('timer:savePreset', p),
     deletePreset: (id) => socket.emit('timer:deletePreset', id),
-    savePlaylist: (pl) => socket.emit('timer:savePlaylist', pl),
     saveSettings: (s) => socket.emit('timer:saveSettings', s),
     onConfigUpdate: (cb) => {
       socket.on('timer:configUpdate', (config) => {
@@ -333,6 +332,13 @@ function formatMilestone(totalSecs) {
     return remainingSecs > 0 ? `${mins}m ${remainingSecs}s` : `${mins}m`;
   }
   return `${totalSecs}s`;
+}
+
+function normalizeCssLength(value, fallback, defaultUnit) {
+  const raw = String(value || '').trim();
+  if (!raw) return fallback;
+  if (/^-?\d+(\.\d+)?$/.test(raw)) return `${raw}${defaultUnit}`;
+  return raw;
 }
 
 function stopAlarm() {
@@ -815,10 +821,10 @@ window.startPlaylistAt = (index) => {
       wrapUp = {
         yellowMs: (item.yellowSec || 60) * 1000,
         redMs: (item.redSec || 30) * 1000,
-        flashOnRed: appConfig.settings.wrap_up?.flashOnRed ?? true,
-        flashOnOvertime: appConfig.settings.wrap_up?.flashOnOvertime ?? true,
-        soundOnYellow: appConfig.settings.wrap_up?.soundOnYellow ?? false,
-        soundOnRed: appConfig.settings.wrap_up?.soundOnRed ?? true
+        flashOnRed: appConfig.settings.wrapUp?.flashOnRed ?? true,
+        flashOnOvertime: appConfig.settings.wrapUp?.flashOnOvertime ?? true,
+        soundOnYellow: appConfig.settings.wrapUp?.soundOnYellow ?? false,
+        soundOnRed: appConfig.settings.wrapUp?.soundOnRed ?? true
       };
     }
 
@@ -1322,7 +1328,8 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   if (nextBtn) {
     nextBtn.addEventListener('click', () => {
-      if (currentPlaylistIndex < playlistQueue.length - 1) {
+      const playlists = appConfig.settings.playlists || [];
+      if (currentPlaylistIndex < playlists.length - 1) {
         window.startPlaylistAt(currentPlaylistIndex + 1);
       } else {
         showToast("End of playlist reached", "info");
@@ -1332,13 +1339,13 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   if (clearPlaylistBtn) {
     clearPlaylistBtn.addEventListener('click', () => {
-      if (playlistQueue.length === 0) return;
+      const playlists = appConfig.settings.playlists || [];
+      if (playlists.length === 0) return;
       if (confirm("Clear the entire playlist lineup?")) {
-        playlistQueue = [];
         currentPlaylistIndex = -1;
         window.timerAPI.reset();
         window.timerAPI.setNotes("");
-        renderPlaylist();
+        window.timerAPI.saveSettings({ playlists: [] });
         showToast("Playlist Lineup Cleared", "warning");
       }
     });
@@ -1369,13 +1376,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   window.timerAPI.onFinished(() => {
     playAlarm();
     speak("Time is up");
-    
-    // Auto Advance Logic
-    const autoAdvance = document.getElementById('autoAdvanceToggle')?.checked;
-    if (autoAdvance && currentPlaylistIndex < playlistQueue.length - 1) {
-      showToast("Auto-advancing to next item in 10s...", "info");
-      setTimeout(() => window.startPlaylistAt(currentPlaylistIndex + 1), 10000);
-    }
   });
 
   window.timerAPI.onConfigUpdate((config) => {
@@ -1627,25 +1627,6 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // Previous addToPlaylistBtn listener was here, removed as it reached the wrong IDs
 
-  document.getElementById('nextBtn')?.addEventListener('click', () => {
-    const playlists = appConfig.settings.playlists || [];
-    if (currentPlaylistIndex < playlists.length - 1) {
-      window.startPlaylistAt(currentPlaylistIndex + 1);
-    }
-  });
-
-  document.getElementById('prevBtn')?.addEventListener('click', () => {
-    if (currentPlaylistIndex > 0) {
-      window.startPlaylistAt(currentPlaylistIndex - 1);
-    }
-  });
-
-  document.getElementById('clearPlaylistBtn')?.addEventListener('click', () => {
-    currentPlaylistIndex = -1;
-    window.timerAPI.saveSettings({ playlists: [] });
-    showToast("Lineup Cleared", "warning");
-  });
-
   document.getElementById('testSoundBtn')?.addEventListener('click', playAlarm);
   
   document.getElementById('saveSettingsBtn')?.addEventListener('click', () => {
@@ -1684,18 +1665,19 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // Appearance Save
   document.getElementById('saveAppearanceBtn')?.addEventListener('click', () => {
+    const currentAppearance = appConfig.settings?.appearance || {};
     const appearance = {
-      timerSize: document.getElementById('appearanceTimerSize').value,
+      timerSize: normalizeCssLength(document.getElementById('appearanceTimerSize').value, currentAppearance.timerSize || '24vw', 'vw'),
       timerColor: document.getElementById('appearanceTimerColor').value,
       timerFont: document.getElementById('appearanceTimerFont').value,
-      titleSize: document.getElementById('appearanceTitleSize').value,
+      titleSize: normalizeCssLength(document.getElementById('appearanceTitleSize').value, currentAppearance.titleSize || '6vh', 'vh'),
       titleColor: document.getElementById('appearanceTitleColor').value,
-      notesSize: document.getElementById('appearanceNotesSize').value,
+      notesSize: normalizeCssLength(document.getElementById('appearanceNotesSize').value, currentAppearance.notesSize || '4.5vh', 'vh'),
       notesColor: document.getElementById('appearanceNotesColor').value,
-      clockSize: document.getElementById('appearanceClockSize').value,
+      clockSize: normalizeCssLength(document.getElementById('appearanceClockSize').value, currentAppearance.clockSize || '17vh', 'vh'),
       clockColor: document.getElementById('appearanceClockColor').value,
       barColor: document.getElementById('appearanceBarColor').value,
-      barHeight: document.getElementById('appearanceBarHeight').value,
+      barHeight: normalizeCssLength(document.getElementById('appearanceBarHeight').value, currentAppearance.barHeight || '12px', 'px'),
     };
 
     const focusMode = {

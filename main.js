@@ -29,6 +29,8 @@ let activeWrapUp = null; // Current timer's wrap-up overrides
 let currentPlaylistIndex = -1; // Index in config.settings.playlists
 let activeTunnelProcess = null;
 const remoteDevices = new Map();
+let countdownEndsAt = null;
+let overtimeStartedAt = null;
 
 /* ---------------- CONFIG STORAGE ---------------- */
 const configPath = path.join(app.getPath('userData'), 'countdown-config.json');
@@ -85,13 +87,29 @@ let config = {
   localUrl: "http://" + networkAddress() + ":8321"
 };
 
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function mergeConfigDefaults(defaultValue, loadedValue) {
+  if (!isPlainObject(defaultValue) || !isPlainObject(loadedValue)) {
+    return loadedValue === undefined ? defaultValue : loadedValue;
+  }
+
+  const merged = { ...defaultValue };
+  for (const [key, value] of Object.entries(loadedValue)) {
+    merged[key] = mergeConfigDefaults(defaultValue[key], value);
+  }
+  return merged;
+}
+
 function loadConfig() {
   try {
     if (fs.existsSync(configPath)) {
       const data = fs.readFileSync(configPath, 'utf8');
       const loaded = JSON.parse(data);
       // Deep merge settings
-      config.settings = { ...config.settings, ...loaded.settings };
+      config.settings = mergeConfigDefaults(config.settings, loaded.settings || {});
       config.customPresets = loaded.customPresets || [];
       
       // MIGRATION: Move top-level playlists to settings.playlists if needed
@@ -124,6 +142,20 @@ function saveConfig() {
 
 // Initial Load
 loadConfig();
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+  process.exit(0);
+}
+
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
 
 /* ---------------- SERVER SETUP ---------------- */
 const port = 8321;
@@ -325,6 +357,10 @@ io.on('connection', (socket) => {
     const state = { 
         remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused, customTitle,
         customNotes, config,
+        projectorStatus: getProjectorStatus(),
+        currentPlaylistIndex,
+        currentTitle: getRunningItemTitle(),
+        activeWrapUp,
         authRequired: !authState 
       };
 
@@ -639,39 +675,64 @@ function broadcastProjectorStatus() {
   broadcast('timer:projectorStatus', status);
 }
 
+function getTimerState(extra = {}) {
+  return {
+    remainingMs,
+    totalMs,
+    isRunning,
+    isOvertime,
+    overtimeMs,
+    isPaused,
+    customTitle,
+    customNotes,
+    currentPlaylistIndex,
+    currentTitle: getRunningItemTitle(),
+    activeWrapUp,
+    ...extra
+  };
+}
+
+function syncTimerFromClock() {
+  if (!isRunning) return false;
+
+  const now = Date.now();
+  let finishedNow = false;
+
+  if (!isOvertime) {
+    remainingMs = Math.max(0, (countdownEndsAt || now) - now);
+    if (remainingMs <= 0) {
+      remainingMs = 0;
+      isOvertime = true;
+      overtimeStartedAt = countdownEndsAt || now;
+      overtimeMs = Math.max(0, now - overtimeStartedAt);
+      finishedNow = true;
+    }
+  } else {
+    overtimeMs = Math.max(0, now - (overtimeStartedAt || now));
+  }
+
+  return finishedNow;
+}
+
 function runTimerInterval() {
   clearInterval(timerInterval);
 
   // Broadcast state immediately so clients don't wait 1s for the first tick
-  broadcast('timer:update', { 
-    remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused,
-    currentPlaylistIndex,
-    currentTitle: getRunningItemTitle()
-  });
+  broadcast('timer:update', getTimerState());
 
   timerInterval = setInterval(() => {
-    if (!isOvertime) {
-      remainingMs -= 1000;
-      if (remainingMs <= 0) {
-        remainingMs = 0;
-        isOvertime = true;
-        overtimeMs = 0;
-        broadcast('timer:finished', {});
-      }
-    } else {
-      overtimeMs += 1000;
-      // Auto-Advance Trigger (at 10s overtime)
-      if (config.settings.autoAdvance && overtimeMs >= 10000) {
-        processAutoAdvance();
-      }
+    const finishedNow = syncTimerFromClock();
+    if (finishedNow) {
+      broadcast('timer:finished', {});
     }
 
-    broadcast('timer:update', { 
-      remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused,
-      currentPlaylistIndex,
-      currentTitle: getRunningItemTitle()
-    });
-  }, 1000);
+    if (isOvertime && config.settings.autoAdvance && overtimeMs >= 10000) {
+      processAutoAdvance();
+      return;
+    }
+
+    broadcast('timer:update', getTimerState());
+  }, 250);
 }
 
 function getRunningItemTitle() {
@@ -694,10 +755,10 @@ function processAutoAdvance() {
       wrapUp = {
         yellowMs: (nextItem.yellowSec || 60) * 1000,
         redMs: (nextItem.redSec || 30) * 1000,
-        flashOnRed: config.settings.wrap_up?.flashOnRed ?? true,
-        flashOnOvertime: config.settings.wrap_up?.flashOnOvertime ?? true,
-        soundOnYellow: config.settings.wrap_up?.soundOnYellow ?? false,
-        soundOnRed: config.settings.wrap_up?.soundOnRed ?? true
+        flashOnRed: config.settings.wrapUp?.flashOnRed ?? true,
+        flashOnOvertime: config.settings.wrapUp?.flashOnOvertime ?? true,
+        soundOnYellow: config.settings.wrapUp?.soundOnYellow ?? false,
+        soundOnRed: config.settings.wrapUp?.soundOnRed ?? true
       };
     }
     
@@ -709,16 +770,20 @@ function processAutoAdvance() {
 
 function startTimer(ms, wrapUpOverride = null, index = -1) {
   currentPlaylistIndex = index;
+  const now = Date.now();
   if (typeof ms === 'number') {
-    remainingMs = ms;
-    totalMs = ms;
+    remainingMs = Math.max(0, ms);
+    totalMs = Math.max(0, ms);
     overtimeMs = 0;
     isOvertime = false;
     activeWrapUp = wrapUpOverride;
   }
+  countdownEndsAt = now + remainingMs;
+  overtimeStartedAt = null;
   if (remainingMs <= 0) {
     remainingMs = 0;
     isOvertime = true;
+    overtimeStartedAt = now;
   }
   isRunning = true;
   isPaused = false;
@@ -726,16 +791,27 @@ function startTimer(ms, wrapUpOverride = null, index = -1) {
 }
 
 function pauseTimer() {
+  syncTimerFromClock();
   isRunning = false;
   isPaused = true;
+  countdownEndsAt = null;
+  overtimeStartedAt = null;
   clearInterval(timerInterval);
-  broadcast('timer:update', { remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused });
+  broadcast('timer:update', getTimerState());
 }
 
 function resumeTimer() {
   if (isRunning) return; 
   isRunning = true;
   isPaused = false;
+  const now = Date.now();
+  if (isOvertime) {
+    overtimeStartedAt = now - overtimeMs;
+    countdownEndsAt = now;
+  } else {
+    countdownEndsAt = now + remainingMs;
+    overtimeStartedAt = null;
+  }
   runTimerInterval();
 }
 
@@ -746,21 +822,36 @@ function resetTimer() {
   totalMs = 0;
   isOvertime = false;
   overtimeMs = 0;
+  activeWrapUp = null;
+  currentPlaylistIndex = -1;
+  countdownEndsAt = null;
+  overtimeStartedAt = null;
   clearInterval(timerInterval);
-  broadcast('timer:update', { remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused });
+  broadcast('timer:update', getTimerState());
 }
 
 function seekTimer(ms) {
-  if (ms <= 0) {
+  const targetMs = Number(ms) || 0;
+  if (targetMs <= 0) {
     remainingMs = 0;
     isOvertime = true;
-    overtimeMs = Math.abs(ms);
+    overtimeMs = Math.abs(targetMs);
   } else {
-    remainingMs = ms;
+    remainingMs = targetMs;
     isOvertime = false;
     overtimeMs = 0;
   }
-  broadcast('timer:update', { remainingMs, totalMs, isRunning, isOvertime, overtimeMs, isPaused });
+  if (isRunning) {
+    const now = Date.now();
+    if (isOvertime) {
+      countdownEndsAt = now;
+      overtimeStartedAt = now - overtimeMs;
+    } else {
+      countdownEndsAt = now + remainingMs;
+      overtimeStartedAt = null;
+    }
+  }
+  broadcast('timer:update', getTimerState());
 }
 
 ipcMain.handle('timer:start', (event, data) => {
@@ -771,7 +862,7 @@ ipcMain.handle('timer:start', (event, data) => {
   const notes = (typeof data === 'object' && data !== null) ? data.notes : "";
   
   if (title) customTitle = title;
-  if (notes) customNotes = notes;
+  if (notes !== undefined) customNotes = notes;
   
   startTimer(ms, wrapUp, index);
 });
@@ -807,6 +898,8 @@ ipcMain.handle("timer:getState", () => {
     customTitle, 
     customNotes, 
     config,
+    currentPlaylistIndex,
+    currentTitle: getRunningItemTitle(),
     activeWrapUp, // Send current overrides if any
     projectorStatus: getProjectorStatus()
   };
