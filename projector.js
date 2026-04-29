@@ -388,7 +388,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       const widthPadding = parsePixelValue(parentStyle.paddingLeft) + parsePixelValue(parentStyle.paddingRight);
       const heightPadding = parsePixelValue(parentStyle.paddingTop) + parsePixelValue(parentStyle.paddingBottom);
       const maxWidth = Math.max(1, parent.clientWidth - widthPadding);
-      const maxHeight = Math.max(1, parent.clientHeight - heightPadding);
+      const maxHeight = Math.max(1, (options.maxHeight || parent.clientHeight) - heightPadding);
 
       let low = minPx;
       let high = Math.min(maxPx, basePx);
@@ -415,8 +415,10 @@ window.addEventListener('DOMContentLoaded', async () => {
     function fitTitleText() {
       const title = document.getElementById('title');
       if (!title || title.offsetParent === null || title.textContent.trim() === '') return;
+      const maxHeightRatio = document.body.classList.contains('has-notes') ? 0.32 : 0.48;
       fitTextToBox(title, {
-        parent: title,
+        parent: document.querySelector('.content-wrapper') || title,
+        maxHeight: window.innerHeight * maxHeightRatio,
         minPx: 20
       });
     }
