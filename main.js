@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, nativeImage, screen } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
@@ -8,10 +8,24 @@ const networkAddress = require('network-address');
 const { spawn } = require('child_process');
 // tunnelmole is an ES module, we will dynamic import it in the handler
 
-// [HOT RELOAD] Listen for file changes and refresh/restart app
-require('electron-reload')(__dirname, {
-  electron: path.join(__dirname, 'node_modules', '.bin', 'electron')
-});
+const APP_NAME = 'Down to Earth';
+const APP_ID = 'com.codemon.downtoearth';
+const appIconPng = path.join(__dirname, 'build', 'icon.png');
+const appIconIco = path.join(__dirname, 'build', 'icon.ico');
+const appIconPath = process.platform === 'win32' ? appIconIco : appIconPng;
+
+app.setName(APP_NAME);
+app.setAppUserModelId(APP_ID);
+
+if (!app.isPackaged) {
+  try {
+    require('electron-reload')(__dirname, {
+      electron: path.join(__dirname, 'node_modules', '.bin', 'electron')
+    });
+  } catch (err) {
+    console.warn('[dev] electron-reload is unavailable:', err.message);
+  }
+}
 
 let mainWindow = null;
 let projectorWindow = null;
@@ -46,13 +60,13 @@ let config = {
     appearance: {
       timerSize: "24vw",
       timerColor: "#ffffff",
-      timerFont: "ui-monospace",
+      timerFont: "Outfit",
       titleSize: "6vh",
       titleColor: "rgba(255, 255, 255, 0.8)",
-      titleFont: "system-ui",
+      titleFont: "Outfit",
       notesSize: "4.5vh",
       notesColor: "#ffffff",
-      notesFont: "system-ui",
+      notesFont: "Outfit",
       clockSize: "17vh",
       clockColor: "rgba(255, 255, 255, 0.83)",
       barColor: "#3b82f6",
@@ -103,6 +117,22 @@ function mergeConfigDefaults(defaultValue, loadedValue) {
   return merged;
 }
 
+function migrateFontToOutfit(settings) {
+  const appearance = settings?.appearance;
+  if (!appearance) return;
+
+  const legacySansFonts = new Set(["system-ui", "'Inter'", "Inter"]);
+  if (!appearance.timerFont || appearance.timerFont === "ui-monospace" || legacySansFonts.has(appearance.timerFont)) {
+    appearance.timerFont = "Outfit";
+  }
+  if (!appearance.titleFont || legacySansFonts.has(appearance.titleFont)) {
+    appearance.titleFont = "Outfit";
+  }
+  if (!appearance.notesFont || legacySansFonts.has(appearance.notesFont)) {
+    appearance.notesFont = "Outfit";
+  }
+}
+
 function loadConfig() {
   try {
     if (fs.existsSync(configPath)) {
@@ -110,6 +140,7 @@ function loadConfig() {
       const loaded = JSON.parse(data);
       // Deep merge settings
       config.settings = mergeConfigDefaults(config.settings, loaded.settings || {});
+      migrateFontToOutfit(config.settings);
       config.customPresets = loaded.customPresets || [];
       
       // MIGRATION: Move top-level playlists to settings.playlists if needed
@@ -165,13 +196,22 @@ const serverUrl = `http://${localIp}:${port}`;
 const expressApp = express();
 const server = http.createServer(expressApp);
 const io = new Server(server);
+const controllerOutPath = path.join(__dirname, 'controller', 'controller', 'out');
+const hasControllerBuild = fs.existsSync(path.join(controllerOutPath, 'index.html'));
 
 // Serve project files for remote web clients
+if (hasControllerBuild) {
+  expressApp.use(express.static(controllerOutPath));
+}
 expressApp.use(express.static(__dirname));
 
 // Route root to renderer.html
 expressApp.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'renderer.html'));
+  if (hasControllerBuild) {
+    res.sendFile(path.join(controllerOutPath, 'index.html'));
+  } else {
+    res.sendFile(path.join(__dirname, 'renderer.html'));
+  }
 });
 
 // Route for remote viewer
@@ -387,6 +427,12 @@ io.on('connection', (socket) => {
     broadcast('timer:configUpdate', config);
   });
 
+  socket.on('timer:refreshPin', (callback) => {
+    if (!authState) return socket.emit('auth:error', 'Authentication required');
+    const newPin = refreshSecurityPin();
+    if (typeof callback === 'function') callback(newPin);
+  });
+
   socket.on('timer:identify', ({ deviceId, userAgent }) => {
     const dev = remoteDevices.get(socket.id);
     if (dev) {
@@ -507,6 +553,7 @@ function createMainWindow() {
     frame: true,
     autoHideMenuBar: true,
     backgroundColor: '#1414147d',
+    icon: appIconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -514,7 +561,11 @@ function createMainWindow() {
     },
   });
 
-  mainWindow.loadFile('renderer.html');
+  if (hasControllerBuild) {
+    mainWindow.loadURL(serverUrl);
+  } else {
+    mainWindow.loadFile('renderer.html');
+  }
 
   // Send server info to local renderer when ready
   mainWindow.webContents.on('did-finish-load', () => {
@@ -570,6 +621,7 @@ function createProjectorWindow(targetDisplayId = null) {
     fullscreen: true,          
     autoHideMenuBar: true,    
     backgroundColor: '#000000',
+    icon: appIconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -595,6 +647,10 @@ function createProjectorWindow(targetDisplayId = null) {
 }
 
 app.whenReady().then(() => {
+  if (process.platform === 'darwin' && app.dock && fs.existsSync(appIconPng)) {
+    app.dock.setIcon(nativeImage.createFromPath(appIconPng));
+  }
+
   createMainWindow();
   createProjectorWindow();
 
@@ -673,6 +729,37 @@ function getProjectorStatus() {
 function broadcastProjectorStatus() {
   const status = getProjectorStatus();
   broadcast('timer:projectorStatus', status);
+}
+
+function refreshSecurityPin() {
+  const newPin = Math.floor(1000 + Math.random() * 9000).toString();
+  config.settings.securityPin = newPin;
+  saveConfig();
+
+  io.sockets.sockets.forEach((socket) => {
+    const dev = remoteDevices.get(socket.id);
+    if (!dev) return;
+
+    const isController = dev.clientType === 'controller';
+    const pinRequired = isController
+      ? config.settings.requirePinController
+      : config.settings.requirePinProjector;
+
+    if (pinRequired) {
+      socket.emit('auth:error', 'Security code has been refreshed. Please re-authenticate.');
+      socket.disconnect(true);
+      remoteDevices.delete(socket.id);
+    }
+  });
+
+  broadcast('timer:configUpdate', config);
+  broadcastDevices();
+
+  console.log(`-------------------------------------------`);
+  console.log(`SECURITY PIN REFRESHED: ${newPin}`);
+  console.log(`-------------------------------------------`);
+
+  return newPin;
 }
 
 function getTimerState(extra = {}) {
@@ -1057,40 +1144,7 @@ ipcMain.handle('timer:unblockDevice', (event, deviceId) => {
 });
 
 ipcMain.handle('timer:refreshPin', () => {
-  // 1. Generate new PIN
-  const newPin = Math.floor(1000 + Math.random() * 9000).toString();
-  config.settings.securityPin = newPin;
-  saveConfig();
-
-  // 2. Selectively disconnect remote participants
-  io.sockets.sockets.forEach((socket) => {
-    const dev = remoteDevices.get(socket.id);
-    if (!dev) return;
-
-    // Check if security PIN is required for this specific device type
-    const isController = dev.clientType === 'controller';
-    const pinRequired = isController
-      ? config.settings.requirePinController
-      : config.settings.requirePinProjector;
-
-    if (pinRequired) {
-      // Security code has been refreshed, force them to re-auth
-      socket.emit('auth:error', 'Security code has been refreshed. Please re-authenticate.');
-      socket.disconnect(true);
-      remoteDevices.delete(socket.id);
-    }
-    // If not required, leave them connected and authenticated
-  });
-
-  // 3. Broadcast the new config to local windows (to show the new PIN)
-  broadcast('timer:configUpdate', config);
-  broadcastDevices();
-
-  console.log(`-------------------------------------------`);
-  console.log(`SECURITY PIN REFRESHED: ${newPin}`);
-  console.log(`-------------------------------------------`);
-
-  return newPin;
+  return refreshSecurityPin();
 });
 
 ipcMain.handle('timer:getDevices', () => {

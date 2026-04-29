@@ -471,10 +471,10 @@ window.addEventListener('DOMContentLoaded', async () => {
         root.style.setProperty('--timer-font', app.timerFont);
         root.style.setProperty('--title-size', app.titleSize);
         root.style.setProperty('--title-color', app.titleColor);
-        root.style.setProperty('--title-font', app.titleFont || 'system-ui');
+        root.style.setProperty('--title-font', app.titleFont || 'Outfit');
         root.style.setProperty('--notes-size', app.notesSize);
         root.style.setProperty('--notes-color', app.notesColor);
-        root.style.setProperty('--notes-font', app.notesFont || 'system-ui');
+        root.style.setProperty('--notes-font', app.notesFont || 'Outfit');
         root.style.setProperty('--bar-color', app.barColor);
         root.style.setProperty('--bar-height', app.barHeight);
         root.style.setProperty('--clock-size', app.clockSize || '17vh');
