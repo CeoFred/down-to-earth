@@ -46,6 +46,15 @@ const remoteDevices = new Map();
 let countdownEndsAt = null;
 let overtimeStartedAt = null;
 
+function getLocalIpAddress() {
+  try {
+    return networkAddress() || '127.0.0.1';
+  } catch (err) {
+    console.warn('Unable to detect local network address, falling back to localhost:', err.message);
+    return '127.0.0.1';
+  }
+}
+
 /* ---------------- CONFIG STORAGE ---------------- */
 const configPath = path.join(app.getPath('userData'), 'countdown-config.json');
 let config = {
@@ -98,7 +107,7 @@ let config = {
     messages: [],                // Library of pre-written stage messages
     activeMessageId: null        // ID of the currently active message (if any)
   },
-  localUrl: "http://" + networkAddress() + ":8321"
+  localUrl: "http://" + getLocalIpAddress() + ":8321"
 };
 
 function isPlainObject(value) {
@@ -189,13 +198,26 @@ app.on('second-instance', () => {
 });
 
 /* ---------------- SERVER SETUP ---------------- */
-const port = 8321;
-const localIp = networkAddress();
-const serverUrl = `http://${localIp}:${port}`;
+const preferredPort = 8321;
+const localIp = getLocalIpAddress();
+let activePort = preferredPort;
+let serverUrl = `http://${localIp}:${activePort}`;
+let serverStarted = false;
+
+function updateServerUrl(port) {
+  activePort = port;
+  serverUrl = `http://${localIp}:${activePort}`;
+  config.localUrl = serverUrl;
+}
 
 const expressApp = express();
 const server = http.createServer(expressApp);
 const io = new Server(server);
+server.on('error', (err) => {
+  if (serverStarted) {
+    console.error('Remote control server error:', err);
+  }
+});
 const controllerOutPath = path.join(__dirname, 'controller', 'controller', 'out');
 const hasControllerBuild = fs.existsSync(path.join(controllerOutPath, 'index.html'));
 
@@ -496,7 +518,7 @@ io.on('connection', (socket) => {
       return socket.emit('timer:tunnelResult', { success: true, url: config.tunnelUrl });
     }
     try {
-      activeTunnelProcess = spawn('npx', ['-y', 'tunnelmole', '8321']);
+      activeTunnelProcess = spawn('npx', ['-y', 'tunnelmole', String(activePort)]);
       let tunnelUrl = null;
       activeTunnelProcess.stdout.on('data', (data) => {
         const output = data.toString();
@@ -540,12 +562,50 @@ io.on('connection', (socket) => {
 
 });
 
-server.listen(port, () => {
-  console.log(`Remote control server running at ${serverUrl}`);
-  console.log(`-------------------------------------------`);
-  console.log(`SECURITY PIN: ${config.settings.securityPin}`);
-  console.log(`-------------------------------------------`);
-});
+function listenOnPort(port) {
+  return new Promise((resolve, reject) => {
+    const handleError = (err) => {
+      server.off('listening', handleListening);
+      reject(err);
+    };
+
+    const handleListening = () => {
+      server.off('error', handleError);
+      resolve(port);
+    };
+
+    server.once('error', handleError);
+    server.once('listening', handleListening);
+    server.listen(port);
+  });
+}
+
+async function startRemoteServer() {
+  const maxFallbackPort = preferredPort + 20;
+
+  for (let port = preferredPort; port <= maxFallbackPort; port += 1) {
+    try {
+      const listeningPort = await listenOnPort(port);
+      updateServerUrl(listeningPort);
+      serverStarted = true;
+      console.log(`Remote control server running at ${serverUrl}`);
+      console.log(`-------------------------------------------`);
+      console.log(`SECURITY PIN: ${config.settings.securityPin}`);
+      console.log(`-------------------------------------------`);
+      return true;
+    } catch (err) {
+      if (err.code === 'EADDRINUSE' && port < maxFallbackPort) {
+        console.warn(`Port ${port} is busy; trying ${port + 1}.`);
+        continue;
+      }
+
+      console.error('Remote control server failed to start:', err);
+      return false;
+    }
+  }
+
+  return false;
+}
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
@@ -561,7 +621,7 @@ function createMainWindow() {
     },
   });
 
-  if (hasControllerBuild) {
+  if (serverStarted && hasControllerBuild) {
     mainWindow.loadURL(serverUrl);
   } else {
     mainWindow.loadFile('renderer.html');
@@ -646,11 +706,12 @@ function createProjectorWindow(targetDisplayId = null) {
   projectorWindow.on('resized', broadcastProjectorStatus);
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   if (process.platform === 'darwin' && app.dock && fs.existsSync(appIconPng)) {
     app.dock.setIcon(nativeImage.createFromPath(appIconPng));
   }
 
+  await startRemoteServer();
   createMainWindow();
   createProjectorWindow();
 
@@ -1064,9 +1125,9 @@ ipcMain.handle('timer:startTunnel', async () => {
   if (activeTunnelProcess) return config.tunnelUrl;
 
   return new Promise((resolve, reject) => {
-    console.log('Starting Tunnelmole for port 8321...');
+    console.log(`Starting Tunnelmole for port ${activePort}...`);
     // We use npx to ensure we use the local version without global install
-    activeTunnelProcess = spawn('npx', ['-y', 'tunnelmole', '8321']);
+    activeTunnelProcess = spawn('npx', ['-y', 'tunnelmole', String(activePort)]);
 
     let tunnelUrl = null;
 

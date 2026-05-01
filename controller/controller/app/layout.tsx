@@ -1,15 +1,8 @@
 import Script from "next/script"
-import { Outfit } from "next/font/google"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { TooltipProvider } from "@/components/ui/tooltip"
-
-const outfit = Outfit({
-  subsets: ["latin"],
-  variable: "--font-outfit",
-  display: "swap",
-})
 
 export default function RootLayout({
   children,
@@ -20,7 +13,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`dark ${outfit.variable} antialiased`}
+      className="dark antialiased"
     >
       <body>
         <ThemeProvider>

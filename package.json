@@ -47,6 +47,12 @@
       ],
       "icon": "build/icon.ico"
     },
+    "nsis": {
+      "artifactName": "${productName}-${version}-windows-${arch}-setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-windows-${arch}-portable.${ext}"
+    },
     "extraResources": []
   },
   "scripts": {

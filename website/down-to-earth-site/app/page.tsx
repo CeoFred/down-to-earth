@@ -19,7 +19,6 @@ import Image from "next/image"
 import { Button } from "@/components/ui/button"
 
 const version = "1.1.0"
-const releaseDownloadBase = "https://github.com/CeoFred/down-to-earth/releases/latest/download"
 
 const downloads = {
   macUniversal: {
@@ -182,7 +181,6 @@ export default function Page() {
               style={{ width: "36px", height: "36px" }}
               className="size-9 rounded-md object-cover"
             />
-            <span className="truncate text-sm font-semibold">Down to Earth</span>
           </a>
           <div className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
             <a href="#preview" className="hover:text-foreground">
