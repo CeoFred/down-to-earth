@@ -341,6 +341,12 @@ function normalizeCssLength(value, fallback, defaultUnit) {
   return raw;
 }
 
+function normalizeFontValue(value, fallback = 'Outfit') {
+  const raw = String(value || fallback).trim().replace(/^['"]|['"]$/g, '');
+  const supported = new Set(['Outfit', 'Inter', 'Oswald', 'Impact', 'Georgia', 'ui-monospace', 'system-ui']);
+  return supported.has(raw) ? raw : fallback;
+}
+
 function stopAlarm() {
   if (activeAlarmContext) {
     try { activeAlarmContext.close(); } catch (e) {}
@@ -712,12 +718,13 @@ window.toggleMessageVisibility = (id) => {
 };
 
 window.deleteMessage = (id) => {
+  const wasActive = appConfig.settings.activeMessageId === id;
+  const activeMessageId = wasActive ? null : appConfig.settings.activeMessageId;
   if (appConfig.settings.activeMessageId === id) {
     window.timerAPI.setNotes("");
-    window.timerAPI.saveSettings({ activeMessageId: null });
   }
   const messages = (appConfig.settings.messages || []).filter(m => m.id !== id);
-  window.timerAPI.saveSettings({ messages });
+  window.timerAPI.saveSettings({ messages, activeMessageId });
   showToast("Message deleted", "info");
 };
 
@@ -892,13 +899,14 @@ window.renderProjectorStatus = function(status) {
   const select = document.getElementById('projectorDisplaySelect');
 
   // Handle Display List Update (Optimization: avoid overwriting if list is identical)
-  if (select && status?.allDisplays) {
-    const listIds = status.allDisplays.map(d => d.id).join(',');
+  const displayList = status?.allDisplays || status?.displays || [];
+  if (select && displayList.length) {
+    const listIds = displayList.map(d => `${d.id}:${d.label || ''}:${d.isPrimary ? '1' : '0'}:${d.id === status.displayId ? 'current' : ''}`).join(',');
     if (select.dataset.lastIds !== listIds) {
         console.log("[ProjectionDeck] Display list changed, updating dropdown.");
-        const options = status.allDisplays.map(d => 
+        const options = displayList.map(d =>
         `<option value="${d.id}" ${d.id === status.displayId ? 'selected' : ''}>
-            ${d.isPrimary ? '⭐️ ' : ''}${d.label}
+            ${d.isPrimary ? 'Primary - ' : ''}${d.label || `Display ${d.id}`}${d.id === status.displayId ? ' (current)' : ''}
         </option>`
         ).join('');
         select.innerHTML = options;
@@ -1009,7 +1017,7 @@ window.renderState = function(state) {
       syncVal('appearanceTimerSize', app.timerSize);
       syncVal('appearanceTimerColor', app.timerColor);
       syncVal('appearanceTimerColorHex', app.timerColor);
-      syncVal('appearanceTimerFont', app.timerFont);
+      syncVal('appearanceTimerFont', normalizeFontValue(app.timerFont));
       
       syncVal('appearanceTitleSize', app.titleSize);
       syncVal('appearanceTitleColor', app.titleColor);
@@ -1669,7 +1677,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     const appearance = {
       timerSize: normalizeCssLength(document.getElementById('appearanceTimerSize').value, currentAppearance.timerSize || '24vw', 'vw'),
       timerColor: document.getElementById('appearanceTimerColor').value,
-      timerFont: document.getElementById('appearanceTimerFont').value,
+      timerFont: normalizeFontValue(document.getElementById('appearanceTimerFont').value),
       titleSize: normalizeCssLength(document.getElementById('appearanceTitleSize').value, currentAppearance.titleSize || '6vh', 'vh'),
       titleColor: document.getElementById('appearanceTitleColor').value,
       notesSize: normalizeCssLength(document.getElementById('appearanceNotesSize').value, currentAppearance.notesSize || '4.5vh', 'vh'),

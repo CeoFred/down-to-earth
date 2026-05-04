@@ -29,6 +29,8 @@ if (!app.isPackaged) {
 
 let mainWindow = null;
 let projectorWindow = null;
+const PROJECTOR_FULLSCREEN_KEEPALIVE_MS = 5000;
+let projectorFullscreenKeepAlive = null;
 
 let timerInterval = null;
 let remainingMs = 0;
@@ -180,6 +182,37 @@ function saveConfig() {
   }
 }
 
+function setProjectorNotes(notes) {
+  customNotes = notes || "";
+  broadcast("timer:notes", { notes: customNotes });
+}
+
+function applySettingsUpdate(settings = {}) {
+  const previousActiveMessageId = config.settings.activeMessageId || null;
+  config.settings = { ...config.settings, ...settings };
+
+  if (
+    Object.prototype.hasOwnProperty.call(settings, 'messages') ||
+    Object.prototype.hasOwnProperty.call(settings, 'activeMessageId')
+  ) {
+    const messages = Array.isArray(config.settings.messages) ? config.settings.messages : [];
+    const activeMessageId = config.settings.activeMessageId || null;
+    const activeMessage = activeMessageId ? messages.find(message => message.id === activeMessageId) : null;
+
+    if (activeMessage) {
+      setProjectorNotes(activeMessage);
+    } else {
+      config.settings.activeMessageId = null;
+      if (previousActiveMessageId) {
+        setProjectorNotes("");
+      }
+    }
+  }
+
+  saveConfig();
+  broadcast('timer:configUpdate', config);
+}
+
 // Initial Load
 loadConfig();
 
@@ -279,6 +312,7 @@ io.on('connection', (socket) => {
       switch (action) {
         case 'open':
           createProjectorWindow(displayId);
+          updateProjectorFullscreenKeepAlive();
           success = true;
           break;
         case 'close':
@@ -293,6 +327,7 @@ io.on('connection', (socket) => {
           if (projectorWindow) {
             const isFull = projectorWindow.isFullScreen();
             projectorWindow.setFullScreen(!isFull);
+            updateProjectorFullscreenKeepAlive();
             broadcastProjectorStatus();
           }
           success = true;
@@ -313,6 +348,7 @@ io.on('connection', (socket) => {
         case 'setDisplay':
           if (displayId) {
             createProjectorWindow(displayId);
+            updateProjectorFullscreenKeepAlive();
             success = true;
           }
           break;
@@ -471,15 +507,12 @@ io.on('connection', (socket) => {
 
   socket.on('timer:saveSettings', (settings) => {
     if (!authState) return socket.emit('auth:error', 'Authentication required');
-    config.settings = { ...config.settings, ...settings };
-    saveConfig();
-    broadcast('timer:configUpdate', config);
+    applySettingsUpdate(settings);
   });
 
   socket.on('timer:setNotes', (notes) => {
     if (!authState) return socket.emit('auth:error', 'Authentication required');
-    customNotes = notes || "";
-    broadcast("timer:notes", { notes: customNotes });
+    setProjectorNotes(notes);
   });
 
   socket.on('timer:getDevices', () => {
@@ -642,6 +675,47 @@ function createMainWindow() {
   });
 }
 
+function shouldKeepProjectorFullscreen() {
+  return Boolean(
+    projectorWindow &&
+    !projectorWindow.isDestroyed() &&
+    isRunning &&
+    !isPaused
+  );
+}
+
+function enforceProjectorFullscreen() {
+  if (!shouldKeepProjectorFullscreen()) return;
+
+  try {
+    if (!projectorWindow.isVisible()) {
+      projectorWindow.show();
+    }
+    if (!projectorWindow.isFullScreen()) {
+      projectorWindow.setFullScreen(true);
+      broadcastProjectorStatus();
+    }
+  } catch (err) {
+    console.error('Unable to keep projector fullscreen:', err);
+  }
+}
+
+function updateProjectorFullscreenKeepAlive() {
+  if (shouldKeepProjectorFullscreen()) {
+    if (!projectorFullscreenKeepAlive) {
+      projectorFullscreenKeepAlive = setInterval(enforceProjectorFullscreen, PROJECTOR_FULLSCREEN_KEEPALIVE_MS);
+      projectorFullscreenKeepAlive.unref?.();
+    }
+    enforceProjectorFullscreen();
+    return;
+  }
+
+  if (projectorFullscreenKeepAlive) {
+    clearInterval(projectorFullscreenKeepAlive);
+    projectorFullscreenKeepAlive = null;
+  }
+}
+
 function createProjectorWindow(targetDisplayId = null) {
   if (projectorWindow && !projectorWindow.isDestroyed()) {
     if (targetDisplayId) {
@@ -655,6 +729,7 @@ function createProjectorWindow(targetDisplayId = null) {
     }
     projectorWindow.show();
     projectorWindow.focus();
+    updateProjectorFullscreenKeepAlive();
     broadcastProjectorStatus();
     return;
   }
@@ -693,11 +768,13 @@ function createProjectorWindow(targetDisplayId = null) {
 
    projectorWindow.once('ready-to-show', () => {
     projectorWindow.setFullScreen(true);
+    updateProjectorFullscreenKeepAlive();
     broadcastProjectorStatus();
   });
 
   projectorWindow.on('closed', () => {
     projectorWindow = null;
+    updateProjectorFullscreenKeepAlive();
     broadcastProjectorStatus();
   });
 
@@ -759,31 +836,65 @@ function broadcast(channel, data) {
 }
 
 /* ---------------- PROJECTOR STATUS MONITORING ---------------- */
+function getDisplayLabel(display, index, primaryDisplayId) {
+  const label = display.label?.trim();
+  if (label) return label;
+  if (display.id === primaryDisplayId) return 'Primary Display';
+  return `Display ${index + 1}`;
+}
+
+function getDisplayList() {
+  const displays = screen.getAllDisplays();
+  const primaryDisplayId = screen.getPrimaryDisplay().id;
+
+  return displays.map((display, index) => ({
+    id: display.id,
+    label: getDisplayLabel(display, index, primaryDisplayId),
+    isPrimary: display.id === primaryDisplayId,
+    bounds: display.bounds
+  }));
+}
+
 function getProjectorStatus() {
+  const displays = getDisplayList();
+
   if (!projectorWindow || projectorWindow.isDestroyed()) {
-    return { active: false, label: "Disconnected", isExternal: false };
+    return {
+      active: false,
+      label: "Disconnected",
+      displayName: "Disconnected",
+      isExternal: false,
+      isFullScreen: false,
+      displays,
+      allDisplays: displays
+    };
   }
 
   try {
-    const displays = screen.getAllDisplays();
     const currentDisplay = screen.getDisplayMatching(projectorWindow.getBounds());
+    const currentDisplayInfo = displays.find(display => display.id === currentDisplay.id);
     const isExternal = currentDisplay.id !== screen.getPrimaryDisplay().id;
 
     return {
       active: true,
       isExternal,
-      displayName: currentDisplay.label || `Display ${currentDisplay.id}`,
+      isFullScreen: projectorWindow.isFullScreen(),
+      displayName: currentDisplayInfo?.label || currentDisplay.label || `Display ${currentDisplay.id}`,
       displayId: currentDisplay.id,
-      allDisplays: displays.map(d => ({
-          id: d.id,
-          label: d.label || `Display ${d.id}`,
-          isPrimary: d.id === screen.getPrimaryDisplay().id,
-          bounds: d.bounds
-      }))
+      displays,
+      allDisplays: displays
     };
   } catch (err) {
     console.error("Error calculating projector status:", err);
-    return { active: false, label: "Error", isExternal: false };
+    return {
+      active: false,
+      label: "Error",
+      displayName: "Error",
+      isExternal: false,
+      isFullScreen: false,
+      displays,
+      allDisplays: displays
+    };
   }
 }
 
@@ -936,6 +1047,7 @@ function startTimer(ms, wrapUpOverride = null, index = -1) {
   isRunning = true;
   isPaused = false;
   runTimerInterval();
+  updateProjectorFullscreenKeepAlive();
 }
 
 function pauseTimer() {
@@ -945,6 +1057,7 @@ function pauseTimer() {
   countdownEndsAt = null;
   overtimeStartedAt = null;
   clearInterval(timerInterval);
+  updateProjectorFullscreenKeepAlive();
   broadcast('timer:update', getTimerState());
 }
 
@@ -961,6 +1074,7 @@ function resumeTimer() {
     overtimeStartedAt = null;
   }
   runTimerInterval();
+  updateProjectorFullscreenKeepAlive();
 }
 
 function resetTimer() {
@@ -975,6 +1089,7 @@ function resetTimer() {
   countdownEndsAt = null;
   overtimeStartedAt = null;
   clearInterval(timerInterval);
+  updateProjectorFullscreenKeepAlive();
   broadcast('timer:update', getTimerState());
 }
 
@@ -999,6 +1114,7 @@ function seekTimer(ms) {
       overtimeStartedAt = null;
     }
   }
+  updateProjectorFullscreenKeepAlive();
   broadcast('timer:update', getTimerState());
 }
 
@@ -1070,14 +1186,11 @@ ipcMain.handle("timer:setTitle", (event, title) => {
   broadcast("timer:title", { title: customTitle });
 });
 ipcMain.handle('timer:saveSettings', (event, settings) => {
-  config.settings = { ...config.settings, ...settings };
-  saveConfig();
-  broadcast('timer:configUpdate', config);
+  applySettingsUpdate(settings);
 });
 
 ipcMain.handle("timer:setNotes", (event, notes) => {
-  customNotes = notes || "";
-  broadcast('timer:notes', { notes: customNotes });
+  setProjectorNotes(notes);
 });
 
 ipcMain.handle('timer:controlProjector', (event, action, data) => {
@@ -1085,6 +1198,7 @@ ipcMain.handle('timer:controlProjector', (event, action, data) => {
   
   if (action === 'open') {
     createProjectorWindow(displayId);
+    updateProjectorFullscreenKeepAlive();
     return true;
   }
 
@@ -1103,6 +1217,8 @@ ipcMain.handle('timer:controlProjector', (event, action, data) => {
     case 'fullscreen':
       const isFull = projectorWindow.isFullScreen();
       projectorWindow.setFullScreen(!isFull);
+      updateProjectorFullscreenKeepAlive();
+      broadcastProjectorStatus();
       return true;
     case 'reload':
       projectorWindow.reload();
@@ -1113,6 +1229,7 @@ ipcMain.handle('timer:controlProjector', (event, action, data) => {
     case 'setDisplay':
       if (displayId) {
           createProjectorWindow(displayId);
+          updateProjectorFullscreenKeepAlive();
           return true;
       }
       break;

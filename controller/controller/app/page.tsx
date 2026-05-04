@@ -122,14 +122,18 @@ type RemoteDevice = {
 type ProjectorDisplay = {
   id: number
   label?: string
+  isPrimary?: boolean
   bounds?: { width: number; height: number }
 }
 
 type ProjectorStatus = {
   active: boolean
+  displayName?: string
+  isExternal?: boolean
   isFullScreen?: boolean
   displayId?: number
   displays?: ProjectorDisplay[]
+  allDisplays?: ProjectorDisplay[]
 }
 
 type AppConfig = {
@@ -254,6 +258,16 @@ const defaultVisibility: Visibility = {
   showNotes: true,
 }
 
+const fontOptions = [
+  { value: "Outfit", label: "Rounded Display" },
+  { value: "Inter", label: "Modern Sans" },
+  { value: "Oswald", label: "Condensed" },
+  { value: "Impact", label: "Heavy" },
+  { value: "Georgia", label: "Serif" },
+  { value: "ui-monospace", label: "Monospace" },
+  { value: "system-ui", label: "System UI" },
+]
+
 const defaultConfig: AppConfig = {
   customPresets: [],
   tunnelUrl: null,
@@ -344,12 +358,28 @@ function parseMilestones(value: string) {
     .filter((seconds) => seconds > 0)
 }
 
+function normalizeFontValue(value?: string) {
+  const normalized = String(value || "Outfit").trim().replace(/^['"]|['"]$/g, "")
+  return fontOptions.some((option) => option.value === normalized) ? normalized : "Outfit"
+}
+
 function deviceName(userAgent = "") {
   if (userAgent.includes("iPhone")) return "iPhone"
   if (userAgent.includes("Android")) return "Android"
   if (userAgent.includes("Macintosh")) return "Mac"
   if (userAgent.includes("Windows")) return "Windows"
   return "Remote device"
+}
+
+function displayOptionLabel(display: ProjectorDisplay, index: number, currentDisplayId?: number) {
+  const label = display.label || `Display ${index + 1}`
+  const resolution = display.bounds ? `${display.bounds.width}x${display.bounds.height}` : ""
+  const meta = [
+    display.isPrimary ? "Primary" : "",
+    display.id === currentDisplayId ? "Current" : "",
+  ].filter(Boolean)
+
+  return [label, resolution, meta.join(" - ")].filter(Boolean).join(" - ")
 }
 
 function normalizeCssLength(value: string, fallback: string, defaultUnit: string) {
@@ -609,6 +639,10 @@ export default function Page() {
     config.localUrl || (typeof window !== "undefined" ? `${window.location.origin}` : "http://localhost:8321")
   const localProjectorUrl = `${localControllerUrl.replace(/\/$/, "")}/projector`
   const qrTargetUrl = config.tunnelUrl ? `${config.tunnelUrl.replace(/\/$/, "")}/projector` : localProjectorUrl
+  const projectorDisplays = projectorStatus.displays?.length
+    ? projectorStatus.displays
+    : projectorStatus.allDisplays || []
+  const selectedProjectorDisplayId = projectorStatus.displayId ?? projectorDisplays[0]?.id
 
   useEffect(() => {
     let cancelled = false
@@ -799,6 +833,12 @@ export default function Page() {
     setConfig((current) => ({ ...current, settings: { ...current.settings, activeMessageId: null } }))
   }
 
+  const deleteMessage = (id: string) => {
+    const wasActive = config.settings.activeMessageId === id
+    saveMessages(messages.filter((message) => message.id !== id), wasActive ? null : config.settings.activeMessageId)
+    if (wasActive) api?.setNotes("")
+  }
+
   const copyText = async (value: string, label: string) => {
     await navigator.clipboard?.writeText(value)
     setCopyStatus(`${label} copied`)
@@ -813,6 +853,9 @@ export default function Page() {
       notesSize: normalizeCssLength(appearance.notesSize, defaultAppearance.notesSize, "vh"),
       clockSize: normalizeCssLength(appearance.clockSize, defaultAppearance.clockSize, "vh"),
       barHeight: normalizeCssLength(appearance.barHeight, defaultAppearance.barHeight, "px"),
+      timerFont: normalizeFontValue(appearance.timerFont),
+      titleFont: normalizeFontValue(appearance.titleFont),
+      notesFont: normalizeFontValue(appearance.notesFont),
     }
     setAppearance(nextAppearance)
     api?.saveSettings({ appearance: nextAppearance })
@@ -1254,7 +1297,7 @@ export default function Page() {
                               <Button
                                 size="icon"
                                 variant="ghost"
-                                onClick={() => saveMessages(messages.filter((item) => item.id !== message.id), null)}
+                                onClick={() => deleteMessage(message.id)}
                                 title="Delete message"
                               >
                                 <Trash />
@@ -1289,15 +1332,16 @@ export default function Page() {
                     <Input type="color" value={appearance.timerColor} onChange={(event) => updateAppearance({ timerColor: event.target.value })} />
                   </Field>
                   <Field label="Timer font">
-                    <Select value={appearance.timerFont} onValueChange={(value) => updateAppearance({ timerFont: value })}>
+                    <Select value={normalizeFontValue(appearance.timerFont)} onValueChange={(value) => updateAppearance({ timerFont: value })}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Outfit">Outfit</SelectItem>
-                        <SelectItem value="ui-monospace">Monospace</SelectItem>
-                        <SelectItem value="system-ui">System UI</SelectItem>
-                        <SelectItem value="Inter">Inter</SelectItem>
+                        {fontOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </Field>
@@ -1317,14 +1361,16 @@ export default function Page() {
                     <Input type="color" value={appearance.titleColor} onChange={(event) => updateAppearance({ titleColor: event.target.value })} />
                   </Field>
                   <Field label="Title font">
-                    <Select value={appearance.titleFont || "Outfit"} onValueChange={(value) => updateAppearance({ titleFont: value })}>
+                    <Select value={normalizeFontValue(appearance.titleFont)} onValueChange={(value) => updateAppearance({ titleFont: value })}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Outfit">Outfit</SelectItem>
-                        <SelectItem value="system-ui">System UI</SelectItem>
-                        <SelectItem value="ui-monospace">Monospace</SelectItem>
+                        {fontOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </Field>
@@ -1336,14 +1382,16 @@ export default function Page() {
                     <Input type="color" value={appearance.notesColor} onChange={(event) => updateAppearance({ notesColor: event.target.value })} />
                   </Field>
                   <Field label="Notes font">
-                    <Select value={appearance.notesFont || "Outfit"} onValueChange={(value) => updateAppearance({ notesFont: value })}>
+                    <Select value={normalizeFontValue(appearance.notesFont)} onValueChange={(value) => updateAppearance({ notesFont: value })}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Outfit">Outfit</SelectItem>
-                        <SelectItem value="system-ui">System UI</SelectItem>
-                        <SelectItem value="ui-monospace">Monospace</SelectItem>
+                        {fontOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </Field>
@@ -1660,19 +1708,19 @@ export default function Page() {
                 <CardContent className="grid gap-4">
                   <Field label="Display">
                     <Select
-                      value={String(projectorStatus.displayId ?? projectorStatus.displays?.[0]?.id ?? 0)}
+                      value={String(selectedProjectorDisplayId ?? 0)}
                       onValueChange={(value) => api?.controlProjector?.("setDisplay", { displayId: Number(value) })}
                     >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {(projectorStatus.displays || []).map((display, index) => (
+                        {projectorDisplays.map((display, index) => (
                           <SelectItem key={display.id} value={String(display.id)}>
-                            {display.label || `Display ${index + 1}`} {display.bounds ? `${display.bounds.width}x${display.bounds.height}` : ""}
+                            {displayOptionLabel(display, index, projectorStatus.displayId)}
                           </SelectItem>
                         ))}
-                        {(projectorStatus.displays || []).length === 0 && <SelectItem value="0">Default display</SelectItem>}
+                        {projectorDisplays.length === 0 && <SelectItem value="0">Default display</SelectItem>}
                       </SelectContent>
                     </Select>
                   </Field>
@@ -1681,7 +1729,7 @@ export default function Page() {
                       onClick={() =>
                         projectorStatus.active
                           ? api?.controlProjector?.("close")
-                          : api?.controlProjector?.("open", { displayId: projectorStatus.displayId })
+                          : api?.controlProjector?.("open", { displayId: selectedProjectorDisplayId })
                       }
                     >
                       <Power />

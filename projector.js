@@ -457,6 +457,31 @@ window.addEventListener('DOMContentLoaded', async () => {
       });
     }
 
+    function resolveFontStack(fontName, fallback = 'Outfit') {
+      const raw = String(fontName || fallback).trim() || fallback;
+      const normalized = raw.replace(/^['"]|['"]$/g, '');
+      const key = normalized.toLowerCase();
+
+      const fontStacks = {
+        outfit: '"Avenir Next", Avenir, "Trebuchet MS", "Segoe UI", system-ui, -apple-system, sans-serif',
+        inter: '"Inter", "Segoe UI", Roboto, Helvetica, Arial, system-ui, -apple-system, sans-serif',
+        'system-ui': 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        'ui-monospace': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+        monospace: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+        georgia: 'Georgia, "Times New Roman", Times, serif',
+        serif: 'Georgia, "Times New Roman", Times, serif',
+        oswald: '"Arial Narrow", "Roboto Condensed", Impact, sans-serif-condensed, sans-serif',
+        condensed: '"Arial Narrow", "Roboto Condensed", Impact, sans-serif-condensed, sans-serif',
+        impact: 'Impact, "Arial Black", "Segoe UI Black", sans-serif',
+        heavy: '"Arial Black", Impact, "Segoe UI Black", sans-serif',
+        futura: 'Futura, "Avenir Next", Avenir, "Trebuchet MS", sans-serif'
+      };
+
+      if (fontStacks[key]) return fontStacks[key];
+      if (raw.includes(',')) return raw;
+      return `"${normalized.replace(/"/g, '\\"')}", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+    }
+
     function applyAppearance(config) {
       if (!config || !config.settings) return;
       const settings = config.settings;
@@ -468,13 +493,13 @@ window.addEventListener('DOMContentLoaded', async () => {
         const root = document.documentElement;
         root.style.setProperty('--timer-size', app.timerSize);
         root.style.setProperty('--timer-color', app.timerColor);
-        root.style.setProperty('--timer-font', app.timerFont);
+        root.style.setProperty('--timer-font', resolveFontStack(app.timerFont));
         root.style.setProperty('--title-size', app.titleSize);
         root.style.setProperty('--title-color', app.titleColor);
-        root.style.setProperty('--title-font', app.titleFont || 'Outfit');
+        root.style.setProperty('--title-font', resolveFontStack(app.titleFont, 'Outfit'));
         root.style.setProperty('--notes-size', app.notesSize);
         root.style.setProperty('--notes-color', app.notesColor);
-        root.style.setProperty('--notes-font', app.notesFont || 'Outfit');
+        root.style.setProperty('--notes-font', resolveFontStack(app.notesFont, 'Outfit'));
         root.style.setProperty('--bar-color', app.barColor);
         root.style.setProperty('--bar-height', app.barHeight);
         root.style.setProperty('--clock-size', app.clockSize || '17vh');
