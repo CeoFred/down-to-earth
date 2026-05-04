@@ -127,4 +127,31 @@
   html {
     @apply font-sans;
     }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  summary,
+  select,
+  input[type="button"],
+  input[type="checkbox"],
+  input[type="color"],
+  input[type="radio"],
+  input[type="range"],
+  input[type="submit"] {
+    cursor: pointer;
+    }
+  button:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+    }
+  input:not([type]),
+  input[type="email"],
+  input[type="number"],
+  input[type="password"],
+  input[type="search"],
+  input[type="tel"],
+  input[type="text"],
+  input[type="url"],
+  textarea {
+    cursor: text;
+    }
 }

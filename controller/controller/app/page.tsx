@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import QRCode from "qrcode"
 import {
   ArrowClockwise,
@@ -211,9 +211,12 @@ type TimerApi = {
   unblockDevice?: (deviceId: string) => unknown
   onDevicesUpdate?: (cb: (devices: RemoteDevice[]) => void) => void
   onProjectorStatus?: (cb: (status: ProjectorStatus) => void) => void
+  onSpeak?: (cb: (data: SpeechPayload) => void) => void
   controlProjector?: (action: string, data?: Record<string, unknown>) => unknown
   register?: (pin: string) => unknown
 }
+
+type SpeechPayload = string | { text?: string }
 
 declare global {
   interface Window {
@@ -486,6 +489,7 @@ function createRemoteTimerApi(): TimerApi | undefined {
     unblockDevice: (deviceId) => socket.emit("timer:unblockDevice", deviceId),
     onDevicesUpdate: (cb) => socket.on("timer:devicesUpdate", cb as never),
     onProjectorStatus: (cb) => socket.on("timer:projectorStatus", cb as never),
+    onSpeak: (cb) => socket.on("timer:speak", cb as never),
     controlProjector: (action, data) => socket.emit("timer:controlProjector", action, data),
     register: (pin) => {
       window.sessionStorage.setItem("production_pin", pin)
@@ -569,6 +573,28 @@ export default function Page() {
   const [pinDraft, setPinDraft] = useState("")
   const [timerYellowSec, setTimerYellowSec] = useState("60")
   const [timerRedSec, setTimerRedSec] = useState("30")
+  const mutedRef = useRef(muted)
+  const configRef = useRef(config)
+
+  useEffect(() => {
+    mutedRef.current = muted
+  }, [muted])
+
+  useEffect(() => {
+    configRef.current = config
+  }, [config])
+
+  const speak = useCallback((data: SpeechPayload) => {
+    const text = typeof data === "string" ? data : data?.text
+    const phrase = String(text || "").trim()
+    if (!phrase || mutedRef.current || !configRef.current.settings.ttsEnabled || !window.speechSynthesis) return
+
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(phrase)
+    utterance.rate = 0.9
+    utterance.pitch = 1
+    window.speechSynthesis.speak(utterance)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -602,6 +628,7 @@ export default function Page() {
       })
       bridge.onDevicesUpdate?.(setDevices)
       bridge.onProjectorStatus?.(setProjectorStatus)
+      bridge.onSpeak?.(speak)
       bridge.getState().then((nextState) => {
         if (cancelled) return
         setState(nextState)
@@ -622,7 +649,7 @@ export default function Page() {
       cancelled = true
       if (retry) clearTimeout(retry)
     }
-  }, [])
+  }, [speak])
 
   const displayTime = state.isOvertime ? `-${formatTime(state.overtimeMs)}` : formatTime(state.remainingMs)
   const progress = useMemo(() => {
@@ -985,22 +1012,7 @@ export default function Page() {
                       }}
                     />
                   </Field>
-                  <div className="grid grid-cols-2 gap-3">
-                    <Field label="Yellow warning">
-                      <Input
-                        inputMode="numeric"
-                        value={timerYellowSec}
-                        onChange={(event) => setTimerYellowSec(event.target.value)}
-                      />
-                    </Field>
-                    <Field label="Red warning">
-                      <Input
-                        inputMode="numeric"
-                        value={timerRedSec}
-                        onChange={(event) => setTimerRedSec(event.target.value)}
-                      />
-                    </Field>
-                  </div>
+
                   <div className="grid grid-cols-3 gap-2">
                     <Button className="h-11" onClick={startTimer}>
                       <Play />
@@ -1642,13 +1654,19 @@ export default function Page() {
                   label="TTS announcements"
                   icon={<BellRinging className="size-4" />}
                   checked={config.settings.ttsEnabled}
-                  onCheckedChange={(checked) => updateSettings({ ttsEnabled: checked })}
+                  onCheckedChange={(checked) => {
+                    updateSettings({ ttsEnabled: checked })
+                    api?.saveSettings({ ttsEnabled: checked })
+                  }}
                 />
                 <VisibilityRow
                   label="Read playlist titles"
                   icon={<Broadcast className="size-4" />}
                   checked={config.settings.readPlaylistTitle}
-                  onCheckedChange={(checked) => updateSettings({ readPlaylistTitle: checked })}
+                  onCheckedChange={(checked) => {
+                    updateSettings({ readPlaylistTitle: checked })
+                    api?.saveSettings({ readPlaylistTitle: checked })
+                  }}
                 />
                 <Field label="Alarm sound">
                   <Select value={config.settings.alarmSound} onValueChange={(value) => updateSettings({ alarmSound: value })}>

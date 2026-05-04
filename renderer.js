@@ -281,10 +281,12 @@ window.copyToClipboard = (elementIdOrText) => {
 };
 
 function speak(text) {
-  const ttsEnabled = document.getElementById('ttsToggle')?.checked;
-  if (!ttsEnabled || isMuted) return;
+  const ttsEnabled = document.getElementById('ttsToggle')?.checked ?? appConfig.settings?.ttsEnabled;
+  const phrase = String(text || '').trim();
+  if (!phrase || !ttsEnabled || isMuted || !window.speechSynthesis) return;
   
-  const utterance = new SpeechSynthesisUtterance(text);
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(phrase);
   utterance.rate = 0.9;
   utterance.pitch = 1.0;
   window.speechSynthesis.speak(utterance);
@@ -845,8 +847,6 @@ window.startPlaylistAt = (index) => {
       notes: item.notes || ""
     });
     renderPlaylist();
-    // Speak title if enabled
-    if (appConfig.settings.readPlaylistTitle) speak(item.title);
   }
 };
 
@@ -885,6 +885,10 @@ window.updatePlaylistTime = (index, mins, secs) => {
 
 window.timerAPI.onProjectorStatus((status) => {
   if (typeof window.renderProjectorStatus === 'function') window.renderProjectorStatus(status);
+});
+
+window.timerAPI.onSpeak?.((data) => {
+  speak(data?.text || data);
 });
 
 window.renderProjectorStatus = function(status) {

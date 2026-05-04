@@ -903,6 +903,20 @@ function broadcastProjectorStatus() {
   broadcast('timer:projectorStatus', status);
 }
 
+function requestSpeech(text) {
+  const phrase = String(text || '').trim();
+  if (!phrase || !config.settings.ttsEnabled) return;
+  broadcast('timer:speak', { text: phrase });
+}
+
+function announcePlaylistItem(index) {
+  if (!config.settings.readPlaylistTitle) return;
+  if (index < 0) return;
+
+  const itemTitle = config.settings.playlists?.[index]?.title || getRunningItemTitle();
+  requestSpeech(itemTitle);
+}
+
 function refreshSecurityPin() {
   const newPin = Math.floor(1000 + Math.random() * 9000).toString();
   config.settings.securityPin = newPin;
@@ -1048,6 +1062,7 @@ function startTimer(ms, wrapUpOverride = null, index = -1) {
   isPaused = false;
   runTimerInterval();
   updateProjectorFullscreenKeepAlive();
+  announcePlaylistItem(currentPlaylistIndex);
 }
 
 function pauseTimer() {
